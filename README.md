@@ -1,6 +1,6 @@
 # Coupling of an Epidemiological Model for Leaf Fungal Diseases with the CROPGRO-Soybean Crop Simulation Model (DSSAT)
 
-**Authors**: Gustavo de Angelo Luca, Izael Martins Fattori Jr.  
+**Authors**: Gustavo de Angelo Luca, Izael Martins Fattori Jr., Fábio Ricardo Marin
 **Affiliation**: University of São Paulo – ESALQ/USP  
 **Version Date**: August 4, 2025
 
@@ -110,7 +110,7 @@ In your `.X` experiment file, activate the disease module using the proper switc
 
 If you use this repository in your research, please cite:
 
-> Luca, G. A.; Fattori Jr., I. M. (2025). *Coupling of an Epidemiological Model for Leaf Diseases with the CROPGRO-Soybean Crop Simulation Model (DSSAT)*. GitHub. [https://github.com/mewing3/dssat-csm-disease.git]
+> Luca, G. A.; Fattori Jr., I. M.; Marin, F.R (2025). *Coupling of an Epidemiological Model for Leaf Diseases with the CROPGRO-Soybean Crop Simulation Model (DSSAT)*. GitHub. [https://github.com/mewing3/dssat-csm-disease.git]
 
 ---
 
