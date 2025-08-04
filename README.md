@@ -1,99 +1,130 @@
-Coupling of an Epidemiological Model for Leaf Fungal Diseases with the CROPGRO-Soybean Crop Simulation Model (DSSAT)
-Authors: Gustavo de Angelo Luca, Izael Martins Fattori Jr.
+# Coupling of an Epidemiological Model for Leaf Fungal Diseases with the CROPGRO-Soybean Crop Simulation Model (DSSAT)
 
-Affiliation: University of São Paulo - ESALQ/USP
+**Authors**: Gustavo de Angelo Luca, Izael Martins Fattori Jr.  
+**Affiliation**: University of São Paulo – ESALQ/USP  
+**Version Date**: August 4, 2025
 
-Version Date: August 04, 2025
+---
 
-1. Abstract
-This repository contains the modified source code of the Decision Support System for Agrotechnology Transfer (DSSAT) to incorporate a generic epidemiological model for leaf diseases.
-The new module, named DISEASE_LEAF, has been coupled with the CROPGRO subroutine to simulate the impact of foliar diseases, such as Asian Soybean Rust (Phakopsora pachyrhizi), on the development and yield of soybean crops.
-The disease model calculates the daily infected leaf area based on environmental variables and pathogen dynamics. This information is then used by CROPGRO to adjust photosynthesis and leaf senescence, enabling a more realistic simulation of the crop-pathogen system.
+## Abstract
 
-3. Methodology
-The coupling was achieved by creating a new Fortran subroutine (DISEASE_LEAF) and integrating it into the main soybean model subroutine (CROPGRO).
+This repository contains a modified version of the [DSSAT](https://dssat.net/) (Decision Support System for Agrotechnology Transfer) source code, integrating a **generic epidemiological model** for foliar diseases into the **CROPGRO-Soybean** module.
 
-3.1. The Epidemiological Model (DISEASE_LEAF)
-DISEASE_LEAF is a state-transition model that operates on a daily time step to simulate the pathogen's life cycle on the crop. The main components are:
+The new module, `DISEASE_LEAF`, simulates the impact of leaf diseases—such as **Asian Soybean Rust** (*Phakopsora pachyrhizi*)—on soybean development and yield. It calculates daily diseased leaf area based on environmental variables and pathogen dynamics, dynamically adjusting **photosynthesis** and **leaf senescence** within CROPGRO.
 
-Environmental Conditions: The model uses daily minimum and maximum temperature (T_min, T_max) and relative humidity (RH) from the DSSAT weather file as inputs. From these, it calculates the leaf wetness duration (LWD), a critical factor for infection.
+---
 
-Inoculum Dynamics: The model tracks the quantity of spores in the canopy. The cycle includes:
+## Methodology
 
-Spore Deposition (F_DS): Calculates the number of spores that land on healthy leaf area.
+### 1. The Epidemiological Model (`DISEASE_LEAF`)
 
-Infection (F_IR): The infection rate is a function of temperature and leaf wetness duration, following a beta response curve.
+A daily time-step state-transition model simulating pathogen dynamics:
 
-Latent Period (F_LR, F_LS): Simulates the time between infection and the appearance of symptoms (lesions). The development rate of the latent period is temperature-dependent.
+- **Environmental Inputs**: T_min, T_max, and Relative Humidity (RH) from DSSAT weather files.
+- **Key Processes**:
+  - **Spore Deposition (F_DS)**
+  - **Infection Rate (F_IR)** — via a beta response curve based on T and Leaf Wetness Duration (LWD)
+  - **Latent Period (F_LR, F_LS)** — temperature-driven
+  - **Spore Production (F_PS, F_PPSR)** — using a Verhulst logistic model and lesion aging (F_LAF)
 
-Spore Production (F_PS, F_PPSR): After the latent period, lesions become infectious and begin to produce new spores. The production rate is modeled using the Verhulst logistic equation, considering the healthy leaf area as a limiting factor (K_Verhulst, r_Verhulst), and is affected by lesion age (F_LAF).
+#### Output:
+- `DISEASE_LAI`: Daily diseased leaf area (fraction of total LAI)
 
-Model Output: The primary output of DISEASE_LEAF is the diseased leaf area (DISEASE_LAI), which represents the portion of the total Leaf Area Index (LAI) compromised by the disease each day.
+---
 
-3.2. Fungicide Control Module
-The model includes a subroutine to simulate decision-making for fungicide applications based on an alert system.
+### 2. Fungicide Control Module
 
-DVIP Calculation (CALC_DVIP): A "Daily Value of Infection Probability" (DVIP), ranging from 0 to 3, is calculated daily based on favorability matrices that cross-reference average temperature (T) and leaf wetness duration (LWD).
+Includes a rule-based system to simulate fungicide applications.
 
-Application Decision (APPLY_FUNGICIDE): A fungicide application is triggered when the sum of the DVIPs from the last 7 days (SUM7) reaches a threshold (in this case, SUM7 >= 6), provided the canopy has a minimum LAI (HEALTH_LAI >= 1.5) and is not within a grace period.
+- **DVIP Calculation**: Daily value of infection probability (0–3), based on favorability matrices.
+- **Application Rule**: Triggered if `SUM7(DVIP) ≥ 6` and `HEALTH_LAI ≥ 1.5`
+- **Fungicide Effect**: Reduces infection rate based on:
+  - `FUNG_EFFICIENCY`
+  - `ResidualDays` (residual protection period)
 
-Fungicide Effect: When an application occurs, the model simulates a protective effect that reduces the infection rate (IR) according to a predefined efficiency (FUNG_EFFICIENCY) for a set residual period (ResidualDays).
+---
 
-3.3. Coupling with CROPGRO-Soybean
-The integration between the models occurs at multiple points within the CROPGRO.f subroutine:
+### 3. Coupling with CROPGRO-Soybean
 
-Declaration: The DISEASE_LEAF subroutine is declared as EXTERNAL at the beginning of CROPGRO. New state variables for the disease are added.
+**Integration Points** in `CROPGRO.for`:
 
-Daily Call: DISEASE_LEAF is called within the daily execution loop of CROPGRO (DYNAMIC .EQ. RATE).
+- **Declaration**: `DISEASE_LEAF` as `EXTERNAL`
+- **Daily Call**: Inserted under `DYNAMIC .EQ. RATE`
+- **Data Exchange**:
+  - *To* DISEASE_LEAF: `TMIN`, `TMAX`, `RHUM`, `XLAI`
+  - *From* DISEASE_LEAF: `DISLA` → used by the `PEST` subroutine
 
-Data Exchange:
+---
 
-CROPGRO -> DISEASE_LEAF: The crop model provides the environmental variables (TMIN, TMAX, RHUM) and the total Leaf Area Index for the day (XLAI).
+## Code Structure
 
-DISEASE_LEAF -> CROPGRO: The disease model returns the diseased leaf area (DISLA).
-
-Damage Simulation: The DISLA value is passed directly to the PEST subroutine in DSSAT. The PEST routine is the standard mechanism in DSSAT for simulating biotic damage and uses the DISLA value to reduce the photosynthetically active leaf area and/or accelerate senescence, directly impacting biomass accumulation and the final crop yield.
-
-4. Code Structure
+```bash
 dssat-csm-os-develop/
+├── DISEASE.for               # New disease module (DISEASE_LEAF)
+├── CROPGRO.for               # Modified to integrate disease model
+├── disease_parameters.txt    # Input file with pathogen-specific parameters
+├── DISEASE_DEVELOPMENT.OUT   # Output file with daily disease progress
+```
 
-DISEASE.for (new file): Contains the main subroutine for the epidemiological model (DISEASE_LEAF) and all its supporting functions (e.g., F_LWD, F_IR, APPLY_FUNGICIDE, etc.).
+---
 
-CROPGRO.for (modified): The main file for the soybean model, modified to include the calls and variable exchanges with DISEASE_LEAF.
+## How to Use
 
-disease_parameters.txt (input file): A text file where specific biological parameters for the pathogen (e.g., cardinal temperatures, infection rates, lesion size) must be provided.
+### 1. Compilation
 
-DISEASE_DEVELOPMENT.OUT (output file): An output file generated by the disease model, containing a daily time series of disease development and environmental conditions.
+- Add `DISEASE.for` to your DSSAT-CSM project
+- Replace original `CROPGRO.for` with the modified one
+- Recompile DSSAT-CSM
 
-5. How to Use
-5.1. Compilation
-To use this model, you must have access to the DSSAT-CSM source code and be able to recompile it. Add the DISEASE.for file to the compilation project and replace the existing CROPGRO.for.
+### 2. Input Files
 
-5.2. Input Files
-Disease Parameters: Create the file disease_parameters.txt in the C:\DSSAT48\Soybean\ directory (or adjust the path in the code). The file must contain the disease parameters, following the format expected by the READ_DISEASE_PARAMETERS subroutine.
+- Create `disease_parameters.txt` in `C:\DSSAT48\Soybean\`
+- Ensure format matches the expectations of `READ_DISEASE_PARAMETERS`
 
-Experiment Activation: In the DSSAT experiment file, the switch for diseases must be activated:
+### 3. Experiment Activation
 
-5.3. Output Files
-The progress of the disease can be monitored in the DISEASE_DEVELOPMENT.OUT file, which contains the following columns:
-RUN, YYDOY, DAS, LAI_HEALTH, LA_DISEASE, LWD, RH, FAT_TEMP, LAI_TOTAL, SUM7, NSPRAYS, FUNG_ACT
+In your `.X` experiment file, activate the disease module using the proper switch.
 
-6. Citation
-If you use this model or code in your research, please cite it as follows:
+### 4. Output Files
 
-Luca, G. A.; Fattori Jr., I. M. (2025). Coupling of an Epidemiological Model for Leaf Diseases with the CROPGRO-Soybean Crop Simulation Model (DSSAT). [Software]. GitHub Repository: .
+`DISEASE_DEVELOPMENT.OUT` provides a daily log:
 
-7. References
-The fungicide management logic was based on the following publications:
+| Column         | Description                              |
+|----------------|------------------------------------------|
+| RUN            | Simulation run ID                        |
+| YYDOY          | Year and day of year                     |
+| DAS            | Days after sowing                        |
+| LAI_HEALTH     | Healthy leaf area                        |
+| LA_DISEASE     | Diseased leaf area                       |
+| LWD            | Leaf Wetness Duration                    |
+| RH             | Relative Humidity                        |
+| FAT_TEMP       | Favorable Temperature                    |
+| LAI_TOTAL      | Total Leaf Area Index                    |
+| SUM7           | 7-day sum of DVIP                        |
+| NSPRAYS        | Number of fungicide applications         |
+| FUNG_ACT       | Indicator of active fungicide effect     |
 
-Godoy, C. V., et al. (2024). Embrapa Technical Circular - Efficacy of fungicides for the control of Asian soybean rust. (Hypothetical reference based on code comments).
-Beruski, N. D., et al. (2020). Residual period of the protective effect of fungicides. (Hypothetical reference based on code comments).
+---
 
-The epidemiological model was deducted from:
-Caubel, J., Launay, M., Ripoche, D., Gouache, D., Buis, S., Huard, F., ... & Bancal, M. O. (2017). Climate change effects on leaf rust of wheat: Implementing a coupled crop-disease model in a French regional application. European Journal of Agronomy, 90, 53-66.
+## Citation
 
-The DSSAT-CSM:
-Jones, J. W., Hoogenboom, G., Porter, C. H., Boote, K. J., Batchelor, W. D., Hunt, L. A., ... & Ritchie, J. T. (2003). The DSSAT cropping system model. European journal of agronomy, 18(3-4), 235-265.
+If you use this repository in your research, please cite:
 
-8. License
-This project is licensed under the . Feel free to use, modify, and distribute, while maintaining attribution to the original authors.
+> Luca, G. A.; Fattori Jr., I. M. (2025). *Coupling of an Epidemiological Model for Leaf Diseases with the CROPGRO-Soybean Crop Simulation Model (DSSAT)*. GitHub. [https://github.com/mewing3/dssat-csm-disease.git]
+
+---
+
+## References
+
+- **Fungicide Management Logic**:
+  - Godoy, C. V., et al. (2024). *Embrapa Technical Circular* (Hypothetical)
+  - Beruski, N. D., et al. (2020). *Residual Period of Fungicide Protection* (Hypothetical)
+
+- **Epidemiological Model Basis**:
+  - Caubel, J., et al. (2017). *European Journal of Agronomy*, 90, 53–66.
+
+- **DSSAT Reference**:
+  - Jones, J. W., et al. (2003). *The DSSAT Cropping System Model*. *European Journal of Agronomy*, 18(3–4), 235–265.
+
+---
+
