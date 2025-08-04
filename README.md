@@ -1,6 +1,7 @@
 # Coupling of an Epidemiological Model for Leaf Fungal Diseases with the CROPGRO-Soybean Crop Simulation Model (DSSAT)
 
 **Authors**: Gustavo de Angelo Luca, Izael Martins Fattori Jr., Fábio Ricardo Marin
+
 **Affiliation**: University of São Paulo – ESALQ/USP  
 **Version Date**: August 4, 2025
 
@@ -8,9 +9,9 @@
 
 ## Abstract
 
-This repository contains a modified version of the [DSSAT](https://dssat.net/) (Decision Support System for Agrotechnology Transfer) source code, integrating a **generic epidemiological model** for foliar diseases into the **CROPGRO-Soybean** module.
+This repository contains a modified version of the [DSSAT](https://dssat.net/) (Decision Support System for Agrotechnology Transfer) source code, integrating a generic epidemiological model for foliar diseases into the CROPGRO-Soybean module.
 
-The new module, `DISEASE_LEAF`, simulates the impact of leaf diseases—such as **Asian Soybean Rust** (*Phakopsora pachyrhizi*)—on soybean development and yield. It calculates daily diseased leaf area based on environmental variables and pathogen dynamics, dynamically adjusting **photosynthesis** and **leaf senescence** within CROPGRO.
+The new module, `DISEASE_LEAF`, simulates the impact of leaf diseases—such as Asian Soybean Rust (*Phakopsora pachyrhizi*)—on soybean development and yield. It calculates daily diseased leaf area based on environmental variables and pathogen dynamics, dynamically adjusting photosynthesis and leaf senescence within CROPGRO.
 
 ---
 
