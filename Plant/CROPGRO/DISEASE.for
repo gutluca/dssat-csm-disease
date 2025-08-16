@@ -5,136 +5,106 @@ C
 C-----------------------------------------------------------------------
 C  REVISION HISTORY
 C  07/17/2023 Written.
-C  11/15/2024 Revised.      
+C  11/15/2024 Revised.
+C  05/20/2025 Fungicide logic.      
+C  08/10/2025 Logic/robustness fixes (cohorts, IR, LAF, LWD, cum. LAI)
 C-----------------------------------------------------------------------
-C  Called : 
-C  Calls  : 
-C========================================================================
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
-     &    CONTROL, ISWITCH, Tmin, Tmax,RH, LAI_TOTAL,    !Input
-     &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
-     &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-     &    DISEASE_LAI)                                   !Output
-                                                         !adicionar RH como parametro para usar rhum media do wth
+     &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
+     &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,       ! Input/State
+     &    YRDOY, YREMRG, NVEG0, YREND,                    ! Input
+     &    DISEASE_LAI)                                    ! Output
 C-----------------------------------------------------------------------
-          !Definitions of constructed variable types
           USE ModuleDefs     
           IMPLICIT NONE
-          EXTERNAL F_RH, F_LWD, T_DEV, F_IR, F_DS,F_CANSPO,F_DEW,F_TAVG,
-     &    F_LR, F_LS, F_PS, F_LAF, F_LAR,F_PPSR,READ_DISEASE_PARAMETERS,
-     &    APPLY_FUNGICIDE, CALC_DVIP 
+          EXTERNAL F_RH, F_LWD, T_DEV, F_IR, F_DS, F_CANSPO, F_DEW,
+     &             F_TAVG, F_LR, F_LS, F_PS, F_LAF, F_LAR, F_PPSR,
+     &             F_PPSR_POP, APPLY_FUNGICIDE, CALC_DVIP,
+     &             READ_DISEASE_PARAMETERS
           SAVE
 C-----------------------------------------------------------------------
-          LOGICAL, PARAMETER :: USE_FUNGICIDE = .FALSE.  !if true, protective effect of fungicide is active;
+C  Switches / constants
+          LOGICAL, PARAMETER :: USE_FUNGICIDE  = .FALSE.
+          LOGICAL, PARAMETER :: USE_WTH_RH     = .TRUE.
+          REAL,    PARAMETER :: LAI_MIN_START  = 0.5
+          INTEGER, PARAMETER :: MAXDAYS        = 200
+          REAL,    PARAMETER :: EPS            = 1.0E-6
 C-----------------------------------------------------------------------
           
-          INTEGER DAS, DYNAMIC, RUN
+          INTEGER DAS, DYNAMIC
           
-          !Variables for Leaf Wetness Duration and Relative Humidity
           REAL RH, LWD, Tdew, Es, E 
           
-          !Variables for Temperature Function
           REAL FT_D, FT, T, Tmin, Tmax
           REAL FT_G
-          REAL TMIN_G
-          REAL TOT_G
-          REAL TMAX_G
-          REAL TMIN_D
-          REAL TOT_D
-          REAL TMAX_D
+          REAL TMIN_G, TOT_G, TMAX_G
+          REAL TMIN_D, TOT_D, TMAX_D
       
-          !Variable for infection rate
           REAL IR
-      
-          ! Variables for canopy suported spores 
           REAL FSS, LAI
-      
-          ! Variables for deposited spores
           REAL DS
-      
-          ! Variable for latency rate
           REAL LR
-      
-          ! Variable for latent spores
           REAL LS
-              
-          ! Variable for spores production
-          REAL PPSR, IS, PS
-      
-          ! Variables for lesion age factor
+          REAL IS
           REAL LA, LAF, LESIONAGEOPT
-      
-          ! Variables for potencial spore production
-          REAL PREV_IS, INFECTIOUS_S 
-      
-          ! Variables for secondary spores
-          REAL ESP_INOC_SEC_LESION_DAY
-      
-          ! LAI calculations
+          REAL PREV_IS
           REAL LAI_TOTAL, DISEASE_LAI
           
           INTEGER k, DAE, DAE_START
+          INTEGER KMAX, DAE_IDX, PREV_IDX
           
           INTEGER YRDOY, YREMRG, PLANT_LIVE, NVEG0, YREND
-          
           INTEGER DISEASE_LIVE
       
-          ! Disease Variables 
-          REAL NDS
-          REAL LESION_S
-          REAL KVERHULST
-          REAL RVERHULST
-          REAL YMAX
-          REAL COF_A
-          REAL COF_B
-          REAL LDMIN
-          REAL LESLIFEMAX
+          REAL NDS, LESION_S, KVERHULST, RVERHULST
+          REAL YMAX, COF_A, COF_B
+          REAL LDMIN, LESLIFEMAX
           REAL Lesion_Rate
           REAL ESP_INOC_SEC
-          REAL HEALTH_LAI
+          REAL HEALTH_LAI, HEALTH_LAI_AVAIL, NEW_LOSS_TODAY
+          REAL INF_AREA_K
           
-          REAL, DIMENSION(200,5) :: ESP_LAT_HIST 
-          REAL, DIMENSION(200) :: SUP_INF_LIST
-          REAL, DIMENSION(200) :: LAI_INF_LIST
+C--------- Population (individuals) & potential rate per area -----------
+          REAL SPORES_YEST, PREV_LATENTS, INF_COUNT_PREV, NPREV_POP
+          REAL POT_SPO_PER_AREA, PS_K
           
-          ! Variables for Fungicide Control
+          REAL, DIMENSION(MAXDAYS,5) :: ESP_LAT_HIST 
+          REAL, DIMENSION(MAXDAYS)   :: SUP_INF_LIST
+          REAL, DIMENSION(MAXDAYS)   :: LAI_INF_LIST
+          
+          REAL,    DIMENSION(MAXDAYS) :: ADMITTED_AREA
+          
           INTEGER DVIP_pts(7)  
-          INTEGER idx          
-          INTEGER SUM7         
-          INTEGER BufferDays   
-          INTEGER ResidualDays 
-          INTEGER NSprays    
+          INTEGER idx, SUM7, BufferDays, ResidualDays, NSprays
           LOGICAL FungActive
           INTEGER DVIP_today
           REAL FUNG_EFFICIENCY
           
 !-----------------------------------------------------------------------
-!         Define constructed variable types based on definitions in
-!         ModuleDefs.for.
+!         Constructed types
           
           TYPE (ControlType) CONTROL
-          TYPE (SwitchType) ISWITCH
+          TYPE (SwitchType)  ISWITCH
           
-!         Transfer values from constructed data types into local variables.
           DYNAMIC = CONTROL % DYNAMIC
-          DAS = CONTROL % DAS
-          RUN = CONTROL % RUN
+          DAS     = CONTROL % DAS
 
 !***********************************************************************
-!     Run Initialization - Called once per simulation
+!  RUNINIT — called once (season start)
 !***********************************************************************
-      IF (DYNAMIC .EQ. RUNINIT) THEN
-!-----------------------------------------------------------------------             
-
-          IS = 0.
-          INFECTIOUS_S = 0.
-          PLANT_LIVE = 0
-
-          ESP_LAT_HIST = 0.
-          SUP_INF_LIST = 0.
-          LAI_INF_LIST = 0.
           
-          DISEASE_LAI = 0.
+      IF (DYNAMIC .EQ. RUNINIT) THEN
+
+          IS = 0.0
+          PLANT_LIVE = 0
+          DAE = 0
+
+          ESP_LAT_HIST = 0.0
+          SUP_INF_LIST = 0.0
+          LAI_INF_LIST = 0.0
+          ADMITTED_AREA= 0.0
+          
+          DISEASE_LAI  = 0.0
           
           idx = 1
           DVIP_pts(:) = 0
@@ -143,234 +113,288 @@ C-----------------------------------------------------------------------
           ResidualDays = 0
           FungActive = .FALSE.
           NSprays = 0
-          FUNG_EFFICIENCY = 0.723 !Circular tecnica embrapa 2023-2024 (Godoy et al.,2024)
-          
+          FUNG_EFFICIENCY = 0.723
+
+          SPORES_YEST = 0.0
+
           OPEN(23, FILE='C:\DSSAT48\Soybean\DISEASE_DEVELOPMENT.OUT',
      &        STATUS='replace')
-
           WRITE(23, 24)
-   24     FORMAT(          
-     x     '     RUN   YYDOY     DAS  LAI_HEALTH  ',
-     x     'LA_DISEASE        LWD          RH    FAT_TEMP   LAI_TOTAL',
-     x     '    SUM7  NSPRAYS FUNG_ACT')
+   24     FORMAT('     RUN   YYDOY     DAS  LAI_HEALTH    LA_DISEASE',
+     &     '  LA_INFECT   NEW_LOSS       LWD         RH      FAT_TEMP',
+     &     '     LAI_TOTAL   SUM7  NSPRAYS FUNG_ACT')
 
- 
+!***********************************************************************
+!  RATE — called every day
+!***********************************************************************
+          
       ELSEIF (DYNAMIC .EQ. RATE) THEN
 
-!***********************************************************************
-!     EMERGENCE CALCULATIONS - 
-!***********************************************************************
-          IF ((CONTROL%DAS .GT. NVEG0) .AND. 
-     &    (PLANT_LIVE .EQ. 0)) THEN
-
+!----- Emergence gate ---------------------------------------------------
+          
+          IF ((CONTROL%DAS .GT. NVEG0) .AND. (PLANT_LIVE .EQ. 0)) THEN
                DAE = 1
-               PLANT_LIVE = 1
+               PLANT_LIVE   = 1
+               DISEASE_LIVE = 0
                
-               DISEASE_LIVE = 0.
-               
-               IS = 0.
-               INFECTIOUS_S = 0.
-      
-               ESP_LAT_HIST = 0.
-               SUP_INF_LIST = 0.
-               LAI_INF_LIST = 0.
+               IS = 0.0
+               ESP_LAT_HIST = 0.0
+               SUP_INF_LIST = 0.0
+               LAI_INF_LIST = 0.0
+               ADMITTED_AREA= 0.0
+               SPORES_YEST  = 0.0
                
                CALL READ_DISEASE_PARAMETERS(NDS, LESION_S, KVERHULST,
-     &        YMAX, COF_A, COF_B, RVERHULST, TMIN_G, TOT_G, TMAX_G,
-     &        TMIN_D, TOT_D, TMAX_D, LDmin, LESIONAGEOPT, LESLIFEMAX,
-     &        DAE_START)
-
+     &            YMAX, COF_A, COF_B, RVERHULST, TMIN_G, TOT_G, TMAX_G,
+     &            TMIN_D, TOT_D, TMAX_D, LDmin, LESIONAGEOPT,LESLIFEMAX,
+     &            DAE_START)
           END IF
-!-----------------------------------------------------------------------     
               
-          IF ((PLANT_LIVE == 1) .AND. (DAE .GE. DAE_START)) THEN
+!----- Disease activation (starts after DAE_START) ----------------------
+          
+          IF ((PLANT_LIVE .EQ. 1) .AND. (DAE .GE. DAE_START)) THEN 
               DISEASE_LIVE = 1
           END IF
           
-          IF ((DISEASE_LIVE .EQ. 1)) THEN
+          IF (DISEASE_LIVE .EQ. 1) THEN
               
               CALL F_TAVG(Tmax, Tmin, T)
-              
               CALL F_DEW (T, Tmin, Tmax, Tdew)
-              
-              !comentar a call F_RH para usar a umidade relativa do wth
-              !CALL F_RH(RH, Tdew, Es, E, T)
-              
+              IF (.NOT. USE_WTH_RH) THEN
+                 CALL F_RH(RH, Tdew, Es, E, T)
+              END IF
               CALL F_LWD(RH, LWD)
               
-              IF (DAE > 1) THEN
-                  HEALTH_LAI = LAI_TOTAL - LAI_INF_LIST(DAE-1)
+!----- Healthy LAI from yesterday’s cumulative loss ---------------------
+              
+              IF (DAE .GT. 1) THEN
+                 PREV_IDX   = MIN(DAE-1,MAXDAYS)
+                 HEALTH_LAI = LAI_TOTAL - LAI_INF_LIST(PREV_IDX)
               ELSE
-                  HEALTH_LAI = LAI_TOTAL
+                 HEALTH_LAI = LAI_TOTAL
+                 PREV_IDX   = 1
               END IF
+              HEALTH_LAI = MAX(0.0, HEALTH_LAI)
+
+!----- Fungicide decision module (optional) -----------------------------
               
-              HEALTH_LAI  = MAX(0.,HEALTH_LAI)
-              
-             !---------------- Fungicide Control --------------  
               CALL CALC_DVIP(LWD, T, DVIP_today)
-              
               CALL APPLY_FUNGICIDE(DVIP_today, DVIP_pts, idx, SUM7,
      &            BufferDays, FungActive, ResidualDays, NSprays,
      &            USE_FUNGICIDE, HEALTH_LAI)
-             !-----------------------------------------------------
               
-              CALL T_DEV(T,TMIN_G,TOT_G,TMAX_G,TMIN_D,TOT_D,TMAX_D,FT, 
-     &        FT_D, FT_G)
-
+!----- Thermal response and inoculum deposition -------------------------
+              
+              CALL T_DEV(T, TMIN_G, TOT_G, TMAX_G, TMIN_D, TOT_D,TMAX_D,
+     &                  FT, FT_D, FT_G)
               CALL F_CANSPO(HEALTH_LAI, NDS, LESION_S, FSS)
-
               CALL F_DS(FSS, NDS, DS)
               
-              IF ((RH < 80.0) .AND. (LWD < 8.0)) THEN
-                  IR = 0.1 * IR
-              ELSE
-                  CALL F_IR(FT, LWD, YMAX, COF_A, COF_B, IR)
-              END IF
+              CALL F_IR(FT, LWD, YMAX, COF_A, COF_B, IR)
+              IF ((RH .LT. 85.0) .AND. (LWD .LT. 10.0)) IR = 0.1 * IR
+              IF (FungActive) IR = IR * (1.0 - FUNG_EFFICIENCY)
+
+!----- No healthy leaf → no new deposits today --------------------------
               
-              !Block new infections if fungicide is active -> protective effect
-              IF (FungActive) THEN
-                  IR = IR * (1.0 - FUNG_EFFICIENCY)
+              IF (HEALTH_LAI .LE. 0.0) THEN
+                 IR = 0.0
+                 DS = 0.0
               END IF
 
               CALL F_LS(IR, DS, LS)
 
-              ESP_LAT_HIST(DAE, 1) = ESP_LAT_HIST(DAE, 1) + LS 
+!----- Register today's latent spores (cohort at DAE) -------------------
+              
+              DAE_IDX = MIN(DAE,MAXDAYS)
+              ESP_LAT_HIST(DAE_IDX, 1) = ESP_LAT_HIST(DAE_IDX, 1) + LS 
 
-              IS = 0.0
-              INFECTIOUS_S = 0.0
-              ESP_INOC_SEC = 0.0
+!----- Day accumulators --------------------------------------------------
+              
+              IS             = 0.0      ! infectious surface (m2 m-2) today
+              ESP_INOC_SEC   = 0.0      ! total secondary spores today
+              NEW_LOSS_TODAY = 0.0      ! newly activated surface today
 
-              DO k=1, DAE
-                  CALL F_LR (FT_D, LDmin, LR, T, TMAX_D, TMIN_D, TOT_D)
-                  ESP_LAT_HIST(DAE, 2) = ESP_LAT_HIST(DAE, 2) + LR
+!----- Yesterday carry-over for population/logistic ---------------------
+              
+              PREV_IS  = 0.0
+              IF (DAE .GT. 1) PREV_IS = SUP_INF_LIST(PREV_IDX)
+
+!----- Lesion aging rate (constant within the day) ----------------------
+              
+              CALL F_LAR (FT_D, LESLIFEMAX, Lesion_Rate)
+
+!----- Build yesterday's population (individuals) -----------------------
+              
+              PREV_LATENTS = 0.0
+              IF (DAE .GT. 1) THEN
+                 KMAX = MIN(DAE-1, MAXDAYS)
+                 DO k = 1, KMAX
+                    IF (ESP_LAT_HIST(k,3) .EQ. 0.0) THEN
+                       PREV_LATENTS = PREV_LATENTS + ESP_LAT_HIST(k,1)
+                    END IF
+                 END DO
+              END IF
+
+              INF_COUNT_PREV = 0.0
+              IF (DAE .GT. 1) THEN
+                 INF_COUNT_PREV = PREV_IS / MAX(LESION_S, EPS)
+              END IF
+
+              NPREV_POP = MAX(SPORES_YEST,0.0) + MAX(PREV_LATENTS,0.0)
+     &                   + MAX(INF_COUNT_PREV,0.0)
+
+!----- Potential spore rate per unit sporulating area (yesterday) -------
+              
+              CALL F_PPSR_POP(KVERHULST, RVERHULST, NPREV_POP,
+     &                        PREV_IS, HEALTH_LAI, POT_SPO_PER_AREA)
+
+!----- Cohort loop -------------------------------------------------------
+              
+              KMAX = MIN(DAE,MAXDAYS)
+              DO k = 1, KMAX
+
+                  CALL F_LR (FT_D, LDmin, LR)
+                  ESP_LAT_HIST(k, 2) = ESP_LAT_HIST(k, 2) + LR
                   
-                  CALL F_LAR (FT_D, LESLIFEMAX, Lesion_Rate)
-                  ESP_LAT_HIST(DAE,4)= ESP_LAT_HIST(DAE,4) +Lesion_Rate 
-                  LA = ESP_LAT_HIST (DAE,4) 
+!--------- Latent -> infectious (happens once) --------------------------
                   
-                  IF ((ESP_LAT_HIST(DAE, 2) >= 1) .AND.
-     &                (ESP_LAT_HIST(DAE, 3) == 0)) THEN
-                  
-                       ESP_LAT_HIST(DAE, 3) = 1
+                  IF ((ESP_LAT_HIST(k, 2) .GE. 1.0) .AND.
+     &                (ESP_LAT_HIST(k, 3) .EQ. 0.0)) THEN
+                       ESP_LAT_HIST(k, 3) = 1.0
+                       ! allocate effective area respecting remaining healthy leaf
+                       INF_AREA_K = ESP_LAT_HIST(k,1) * LESION_S
+                       INF_AREA_K = MAX(INF_AREA_K, 0.0)
+                       HEALTH_LAI_AVAIL = MAX(HEALTH_LAI - 
+     &                                         NEW_LOSS_TODAY,0.0)
+                       ADMITTED_AREA(k)=MIN(INF_AREA_K,HEALTH_LAI_AVAIL)
+                       NEW_LOSS_TODAY=NEW_LOSS_TODAY + ADMITTED_AREA(k)
                   END IF
-                    
-                  IF (ESP_LAT_HIST(DAE, 3) == 1) THEN 
-                      INFECTIOUS_S = ESP_LAT_HIST(DAE, 1) * LESION_S 
-                      IS = IS + INFECTIOUS_S
+                  
+!--------- After infectious ------------------------------------------------
+     
+                  IF (ESP_LAT_HIST(k, 3) .EQ. 1.0) THEN 
+                      ESP_LAT_HIST(k,4) = ESP_LAT_HIST(k,4) +Lesion_Rate
+                      LA = ESP_LAT_HIST(k,4)
+
+                      CALL F_LAF(LA, LAF, LESIONAGEOPT)
+
+!--------- Infectious area of the cohort today (only while LA<=1) -------
                       
-                      IF (LAI_TOTAL .LT. 0.5) THEN
-                          IS = 0 !evita progressao elevada da doença quando iaf é mto baixo
+                      INF_AREA_K = 0.0
+                      IF (LA .LE. 1.0) INF_AREA_K = ADMITTED_AREA(k)
+                      IF (LAI_TOTAL .LT. LAI_MIN_START) INF_AREA_K = 0.0
+
+                      IS = IS + INF_AREA_K
+                      
+!--------- Secondary production while LA<=1 and substrate remains -------
+                      
+                      IF (LA .LE. 1.0) THEN
+                          LAI  = MAX(HEALTH_LAI - NEW_LOSS_TODAY, 0.0)
+                          IF(LAI.GT.0.0.AND.POT_SPO_PER_AREA.GT.0.0)THEN
+                              PS_K = POT_SPO_PER_AREA * INF_AREA_K * 
+     &                        FT_D * LAF
+                              ESP_INOC_SEC =ESP_INOC_SEC + MAX(PS_K,0.0)
+                          END IF
                       END IF
                   END IF
-                  
-                  CALL F_LAF(LA, LAF, LESIONAGEOPT)
-                  
-                  IF (PREV_IS == 0.) THEN
-                      IF (DAE > 1) THEN
-                          PREV_IS = ESP_LAT_HIST (DAE - 1., 1)
-                      ELSE
-                          PREV_IS = 0.
-                      END IF     
-                  END IF
-                  
-                  CALL F_PPSR(KVERHULST, RVERHULST,INFECTIOUS_S,
-     &            PREV_IS, LAI, PPSR) 
-                 
-            
-                  IF (ESP_LAT_HIST(DAE,4) <= 1.0) THEN
-                      CALL F_PS (PPSR,LESION_S, FT_D, LAF,PS) 
-                      ESP_INOC_SEC_LESION_DAY = PS
-            
-                  ELSE
-                      ESP_INOC_SEC_LESION_DAY = 0.0   
-                  END IF
-                  
-                  ESP_INOC_SEC = ESP_INOC_SEC + ESP_INOC_SEC_LESION_DAY
-                        
               END DO
-              SUP_INF_LIST(DAE) = IS
 
-              ! Add secondary spores to the daily spores 
-              ESP_LAT_HIST(DAE, 1) = ESP_LAT_HIST(DAE, 1) + ESP_INOC_SEC
-              ESP_LAT_HIST(DAE,5) = ESP_LAT_HIST(DAE,5) + ESP_INOC_SEC
-            
-              LAI_INF_LIST(DAE) = LAI_INF_LIST(DAE) + IS
-        
-              DISEASE_LAI = LAI_INF_LIST(DAE)
-              DISEASE_LAI = min(LAI_TOTAL, DISEASE_LAI) 
-              DISEASE_LAI = DISEASE_LAI * 10000. 
+!----- Store infectious surface today & add secondary inoculum ----------
+              
+              SUP_INF_LIST(DAE_IDX) = IS
+
+              IF (ESP_INOC_SEC .GT. 0.0) THEN
+                  ESP_LAT_HIST(DAE_IDX, 1) = ESP_LAT_HIST(DAE_IDX, 1) + 
+     &                                     ESP_INOC_SEC
+                  ESP_LAT_HIST(DAE_IDX, 5) = ESP_LAT_HIST(DAE_IDX, 5) + 
+     &                                     ESP_INOC_SEC
+              END IF
+
+!----- Pool of spores of the day (life=1 day) ---------------------------
+              
+              SPORES_YEST = ESP_INOC_SEC
+              
+!----- Cumulative removed LAI (m2 m-2) ----------------------------------
+              
+              IF (DAE .GT. 1) THEN
+                 LAI_INF_LIST(DAE_IDX) = LAI_INF_LIST(PREV_IDX) + 
+     &                                   NEW_LOSS_TODAY
+              ELSE
+                 LAI_INF_LIST(DAE_IDX) = NEW_LOSS_TODAY
+              END IF
+
+!----- Internal var uses cm2 m-2 (legacy), output will divide by 10000 --
+              
+              DISEASE_LAI = MIN(LAI_TOTAL,LAI_INF_LIST(DAE_IDX))*10000.0
           
           ELSE
               HEALTH_LAI = LAI_TOTAL
-          
           END IF
           
-          IF (PLANT_LIVE .EQ. 1) THEN
-              DAE = DAE + 1
-          END IF
+!----- Advance time ------------------------------------------------------
           
-          IF (YREND .EQ. YRDOY) THEN
-              PLANT_LIVE = 0
-          END IF
+          IF (PLANT_LIVE .EQ. 1) DAE = DAE + 1
+          IF (YREND .EQ. YRDOY)  PLANT_LIVE = 0
           
 !***********************************************************************
-!     OUTPUT
+!  OUTPUT — called on output events
 !***********************************************************************
+          
       ELSEIF (DYNAMIC .EQ. OUTPUT) THEN
 
-            ! Write output
-            WRITE(23, '(3I8, 7F12.3, I8, L2)') CONTROL%RUN, YRDOY,
-     &           CONTROL%DAS, HEALTH_LAI, DISEASE_LAI/10000., LWD, RH, 
-     &           FT, LAI_TOTAL, REAL(SUM7), NSprays, FungActive
+            WRITE(23, '(3I8, 9F12.3, I8, L2)') CONTROL%RUN, YRDOY,
+     &  CONTROL%DAS, HEALTH_LAI, DISEASE_LAI/10000.0, IS,NEW_LOSS_TODAY,
+     &  LWD, RH, FT, LAI_TOTAL, REAL(SUM7), NSprays, FungActive
 
+!***********************************************************************
+!  SEASEND — called once (season end)
+!***********************************************************************
+            
       ELSEIF (DYNAMIC .EQ. SEASEND) THEN
-
-            PLANT_LIVE = 0
+            PLANT_LIVE   = 0
             DISEASE_LIVE = 0
-            
-            ESP_LAT_HIST = 0.
-            SUP_INF_LIST = 0.
-            LAI_INF_LIST = 0.
-            
-            DISEASE_LAI = 0.
+            ESP_LAT_HIST = 0.0
+            SUP_INF_LIST = 0.0
+            LAI_INF_LIST = 0.0
+            ADMITTED_AREA= 0.0
+            DISEASE_LAI  = 0.0
             DAE = 1
+            SPORES_YEST  = 0.0
             CLOSE(23)
-        
-!***********************************************************************
-!     END OF DYNAMIC IF CONSTRUCT
-!***********************************************************************
       ENDIF
-!***********************************************************************
+
       END SUBROUTINE DISEASE_LEAF
 
-!-----------------------------------------------------------------
-! SUBROUTINES 
-!-----------------------------------------------------------------
+!-----------------------------------------------------------------------
+!  SUBROUTINES
+!-----------------------------------------------------------------------
 
 ! ------ READ PARAMETERS
-      SUBROUTINE READ_DISEASE_PARAMETERS(NDS, LESION_S,KVERHULST,
+!  keep parameter file consistent with columns order below.
+     
+      SUBROUTINE READ_DISEASE_PARAMETERS(NDS, LESION_S, KVERHULST,
      &                                  YMAX, COF_A, COF_B, 
-     &                                  RVERHULST,TMIN_G, TOT_G,TMAX_G,
+     &                                  RVERHULST, TMIN_G, TOT_G,TMAX_G,
      &                                  TMIN_D, TOT_D, TMAX_D,    
-     &                                  LDmin, LESIONAGEOPT,LESLIFEMAX,
+     &                                  LDmin, LESIONAGEOPT, LESLIFEMAX,
      &                                  DAE_START)
 
           IMPLICIT NONE
           
-          REAL NDS, LESION_S, KVERHULST, RVERHULST
-          REAL YMAX, COF_A, COF_B
-          REAL TMIN_G, TOT_G, TMAX_G
-          REAL TMIN_D, TOT_D, TMAX_D
-          REAL LDmin, LESIONAGEOPT, LESLIFEMAX
+          REAL    NDS, LESION_S, KVERHULST, RVERHULST
+          REAL    YMAX, COF_A, COF_B
+          REAL    TMIN_G, TOT_G, TMAX_G
+          REAL    TMIN_D, TOT_D, TMAX_D
+          REAL    LDmin, LESIONAGEOPT, LESLIFEMAX
           INTEGER DAE_START
 
-          CHARACTER(LEN=6) ID       
+          CHARACTER(LEN=6)  ID       
           CHARACTER(LEN=20) VRNAME   
           INTEGER UNIT, IOS
 
           UNIT = 10
 
-          OPEN(UNIT, FILE="C:\DSSAT48\Soybean\disease_parameters.txt", 
+          OPEN(UNIT, FILE='C:\DSSAT48\Soybean\disease_parameters.txt', 
      &        STATUS='OLD', ACTION='READ', IOSTAT=IOS)
 
           READ(UNIT, *)
@@ -387,288 +411,259 @@ C-----------------------------------------------------------------------
      &             LDmin, LESIONAGEOPT, LESLIFEMAX,
      &             DAE_START
 
+          CLOSE(UNIT)
 
-      CLOSE(UNIT)
-
-      RETURN
+          RETURN
       END SUBROUTINE READ_DISEASE_PARAMETERS
 
 ! ------ AVERAGE TEMPERATURE
+
       SUBROUTINE F_TAVG(Tmax, Tmin, T)
           USE ModuleDefs
           IMPLICIT NONE
-          
           REAL Tmax, Tmin, T
-          
-          T = (Tmax + Tmin) / 2.
-          
+          T = (Tmax + Tmin) / 2.0
       END SUBROUTINE F_TAVG
       
-! ------ DEW POINT TEMPERATURE
+! ------ DEW POINT TEMPERATURE (empirical)
       SUBROUTINE F_DEW(T, Tmin, Tmax, Tdew)
           USE ModuleDefs
           IMPLICIT NONE
-          
           REAL T, Tmin, Tmax, Tdew
-          
-          Tdew = (-0.036*T)+(0.9679*Tmin)+(0.0072*(Tmax-Tmin))+1.0111
-          
+          Tdew = (-0.036*T) + (0.9679*Tmin)+(0.0072*(Tmax-Tmin)) +1.0111
       END SUBROUTINE F_DEW
       
-! ------ RELATIVE HUMIDITY
+! ------ RELATIVE HUMIDITY (Tetens form) -> RH in %
       SUBROUTINE F_RH(RH, Tdew, Es, E, T)
           USE ModuleDefs
           IMPLICIT NONE
-          
           REAL RH, Tdew, Es, E, T
-          
-          Es = EXP(17.625*T/(243.04+T))
-          E = EXP((17.625 * Tdew) / (243.04 + Tdew))
-          RH = max((E / Es) * 100.0, 0.0)
-          
+          Es = EXP(17.625*T    /(243.04+T))
+          E  = EXP(17.625*Tdew /(243.04+Tdew))
+          RH = MAX((E / Es) * 100.0, 0.0)
       END SUBROUTINE F_RH
       
-! ------ LEAF WETNESS DURATION
+! ------ LEAF WETNESS DURATION (no side-effect on RH)
       SUBROUTINE F_LWD(RH, LWD)
           USE ModuleDefs
           IMPLICIT NONE
-
           REAL RH, LWD
+          REAL RH_LOC
           
-          IF (RH <= 1.0) THEN
-              RH = RH * 100.0
-              RH = MIN(MAX(RH, 0.0), 100.0)
-          END IF
+          RH_LOC = RH
+          IF (RH_LOC .LE. 1.0) RH_LOC = RH_LOC * 100.0
+          RH_LOC = MIN(MAX(RH_LOC, 0.0), 100.0)
           
-          LWD = max(31.31 / (1.0 + exp(-((RH - 85.17) / 9.13))), 0.0)
-           
+          LWD = MAX(31.31 / (1.0 + EXP(-((RH_LOC - 85.17) / 9.13))),0.0)
+          LWD = MIN(LWD, 24.0)
       END SUBROUTINE F_LWD
 
-! ------ TEMPERATURE DEVELOPMENT FUNCTION
-      SUBROUTINE T_DEV 
-     &   (T,TMIN_G,TOT_G,TMAX_G,TMIN_D,TOT_D,TMAX_D,FT, FT_D, FT_G)
+! ------ TEMPERATURE DEVELOPMENT FUNCTION (beta response)
+      SUBROUTINE T_DEV (T, TMIN_G, TOT_G, TMAX_G, TMIN_D, TOT_D, TMAX_D,
+     &                  FT, FT_D, FT_G)
           USE ModuleDefs
           IMPLICIT NONE
-      
           REAL FT_D, FT_G, FT, T
           REAL TMIN_D, TOT_D, TMAX_D, TMIN_G, TOT_G, TMAX_G
           
-          FT_G = ((TMAX_G-T)/(TMAX_G-TOT_G))*((T-TMIN_G)/
-     &    (TOT_G-TMIN_G))**((TOT_G-TMIN_G)/(TMAX_G-TOT_G)) 
+          FT_G = ((TMAX_G-T)/(TMAX_G-TOT_G)) * ((T-TMIN_G)/
+     &           (TOT_G-TMIN_G))**((TOT_G-TMIN_G)/(TMAX_G-TOT_G)) 
           
-          IF (T > TMIN_D) THEN
+          IF (T .GT. TMIN_D) THEN
               FT_D = ((TMAX_D-T)/(TMAX_D-TOT_D)) * ((T-TMIN_D)/
-     &    (TOT_D-TMIN_D))**((TOT_D-TMIN_D)/(TMAX_D-TOT_D))
+     &               (TOT_D-TMIN_D))**((TOT_D-TMIN_D)/(TMAX_D-TOT_D))
           ELSE
-              FT_D = 0.
+              FT_D = 0.0
           END IF
       
-          IF ((T < 12.0) .OR. (T > 32.0)) then
+          IF ((T .LT. 12.0) .OR. (T .GT. 32.0)) THEN
               FT = 0.0
           ELSE
-              FT = max(min(FT_G * FT_D, 1.0), 0.0)
+              FT = MAX(MIN(FT_G * FT_D, 1.0), 0.0)
           END IF
-            
       END SUBROUTINE T_DEV
 
 ! ------ INFECTION RATE
       SUBROUTINE F_IR(FT, LWD, Ymax, A, B, IR)
           USE ModuleDefs
           IMPLICIT NONE
-      
           REAL Ymax, A, B, IR, LWD, FT
-          
-          IR = Ymax * FT * (1.0 - exp(-(A * LWD)**B))
-            
+          IR = Ymax * FT * (1.0 - EXP(-(A * LWD)**B))
       END SUBROUTINE F_IR
     
-! ------ CANOPY SUPORTED SPORES
+! ------ CANOPY SUPPORTED SPORES (capacity fraction)
       SUBROUTINE F_CANSPO(LAI, NDS, LESION_S, FSS)
           USE ModuleDefs
           IMPLICIT NONE
-      
           REAL FSS, LAI, NDS, LESION_S
-          
-          IF (NDS == 0.) THEN
-              FSS = 0.
+          IF (NDS .LE. 0.0) THEN
+              FSS = 0.0
           ELSE
               FSS = LAI / (NDS * LESION_S)
-              FSS = min(max(FSS, 0.0), 1.0)
+              FSS = MIN(MAX(FSS, 0.0), 1.0)
           END IF
-        
       END SUBROUTINE F_CANSPO
 
 ! ------ DEPOSITED SPORES
-      SUBROUTINE F_DS(FSS, NDS,DS)
+      SUBROUTINE F_DS(FSS, NDS, DS)
           USE ModuleDefs
           IMPLICIT NONE
-      
           REAL FSS, NDS, DS
-    
           DS = FSS * NDS
-        
       END SUBROUTINE F_DS
 
-! ------ LATENCY RATE
-      SUBROUTINE F_LR(FT_D, LDmin, LR, T, TMAX_D, TMIN_D, TOT_D)
+! ------ LATENCY RATE (uses FT_D; no re-computation)
+      SUBROUTINE F_LR(FT_D, LDmin, LR)
           USE ModuleDefs
           IMPLICIT NONE
-      
-          REAL LR, FT_D, LDmin, T, TMAX_D, TMIN_D, TOT_D
-          
-          
-          IF (T > TMIN_D) THEN
-              FT_D = ((TMAX_D-T)/(TMAX_D-TOT_D)) * ((T-TMIN_D)/
-     &    (TOT_D-TMIN_D))**((TOT_D-TMIN_D)/(TMAX_D-TOT_D))
-          ELSE
-              FT_D = 0.
-          END IF
-
-          LR = FT_D / LDmin
-        
+          REAL LR, FT_D, LDmin
+          LR = MAX(FT_D, 0.0) / MAX(LDmin, 1.0E-6)
       END SUBROUTINE F_LR
     
-! ------ LATENT SPORES    
+! ------ LATENT SPORES
       SUBROUTINE F_LS(IR, DS, LS)
           USE ModuleDefs
           IMPLICIT NONE
-      
           REAL IR, DS, LS
-    
-          LS = max((IR * DS), 0.0)
-        
+          LS = MAX(IR * DS, 0.0)
       END SUBROUTINE F_LS
 
-! ------ SPORES PRODUCTION (2º INOCULUM PROD)
-      SUBROUTINE F_PS(PPSR, LESION_S, FT_D, LAF,PS)
+! ------ SPORES PRODUCTION (secondary inoculum) — kept for compatibility
+      SUBROUTINE F_PS(PPSR, LESION_S, FT_D, LAF, PS)
           USE ModuleDefs
           IMPLICIT NONE
-      
           REAL PS, PPSR, LESION_S, FT_D, LAF
-
           PS = PPSR * LESION_S * FT_D * LAF
-
       END SUBROUTINE F_PS 
     
-! ------- LESION AGE RATE
+! ------ LESION AGE RATE
       SUBROUTINE F_LAR (FT_D, LESLIFEMAX, Lesion_Rate)
           USE ModuleDefs
           IMPLICIT NONE
-          
           REAL FT_D, LESLIFEMAX, Lesion_Rate
-          
-          IF (FT_D .LE. 0.) THEN
-              Lesion_Rate = 0.
+          IF (FT_D .LE. 0.0) THEN
+              Lesion_Rate = 0.0
           ELSE
-              Lesion_Rate = 1.0 / (FT_D * LESLIFEMAX)
+              Lesion_Rate = FT_D / MAX(LESLIFEMAX, 1.0E-6)
           END IF
-
       END SUBROUTINE F_LAR
           
-! ------ LESION AGE FACTOR  
+! ------ LESION AGE FACTOR (0..1)
       SUBROUTINE F_LAF(LA, LAF, LESIONAGEOPT)
           USE ModuleDefs
           IMPLICIT NONE
-      
-          REAL LAF, LA, LESIONAGEOPT
-            
-          IF (LA < LESIONAGEOPT) THEN
-              LAF = LA / LESIONAGEOPT
-                
-          ELSEIF (LA == LESIONAGEOPT) THEN
-              LAF = 1.0
-              
+          REAL LAF, LA, LESIONAGEOPT, TMP
+          IF (LA .LT. LESIONAGEOPT) THEN
+              TMP = LA / MAX(LESIONAGEOPT, 1.0E-6)
+          ELSEIF (LA .EQ. LESIONAGEOPT) THEN
+              TMP = 1.0
           ELSE 
-              LAF = 1.0 - (LA - LESIONAGEOPT) / (1.0 - LESIONAGEOPT)
-              
+              TMP = 1.0 - (LA-LESIONAGEOPT)/MAX(1.0-LESIONAGEOPT,1.0E-6)
           END IF
-        
+          LAF = MAX(MIN(TMP, 1.0), 0.0)
       END SUBROUTINE F_LAF
 
-! ------ POTENCIAL SPORES PRODUCTION RATE
-      SUBROUTINE F_PPSR(KVERHULST,RVERHULST,INFECTIOUS_S, PREV_IS, LAI,
-     &    PPSR)
+! ------ POTENTIAL SPORE RATE (legacy logistic, area-based)
+!  (not used in core; kept for compatibility)
+      SUBROUTINE F_PPSR(KVERHULST, RVERHULST, INFECTIOUS_S, PREV_IS,LAI,
+     &                  PPSR)
           USE ModuleDefs
           IMPLICIT NONE
-        
-          REAL PPSR, KVERHULST, RVERHULST, INFECTIOUS_S, PREV_IS, 
-     &    LAI
-          
-          IF (INFECTIOUS_S == 0.0) THEN
+          REAL PPSR, KVERHULST, RVERHULST, INFECTIOUS_S, PREV_IS, LAI
+          REAL CARRY
+          IF (INFECTIOUS_S .EQ. 0.0) THEN
               PPSR = 0.0   
-                    
           ELSE
-              PPSR = (PREV_IS + (RVERHULST*PREV_IS*
-     &    (KVERHULST*LAI-PREV_IS))/KVERHULST)/INFECTIOUS_S
-                      
-              PPSR = max(PPSR, 0.0)
+              CARRY = KVERHULST * LAI
+              PPSR = (PREV_IS + (RVERHULST * PREV_IS *(CARRY-PREV_IS)) /
+     &               MAX(KVERHULST, 1.0E-6)) / INFECTIOUS_S
+              PPSR = MAX(PPSR, 0.0)
           END IF
-
       END SUBROUTINE F_PPSR
+
+! ------ POTENTIAL SPORE RATE PER UNIT SPORULATING AREA 
+
+      SUBROUTINE F_PPSR_POP(KVERHULST, RVERHULST, NPREV, INF_SURF_PREV,
+     &                       LAI_SUSC, POT_SPO_PER_AREA)
+          USE ModuleDefs
+          IMPLICIT NONE
+          REAL KVERHULST, RVERHULST, NPREV, INF_SURF_PREV, LAI_SUSC
+          REAL POT_SPO_PER_AREA
+          REAL KTOTAL, DN, NEW_SPORES
+          REAL EPSL
+          EPSL = 1.0E-6
+
+          POT_SPO_PER_AREA = 0.0
+
+          IF (LAI_SUSC .LE. 0.0) RETURN
+          KTOTAL = MAX(KVERHULST * LAI_SUSC, EPSL)
+
+          IF (NPREV .LE. 0.0) RETURN
+
+          DN         = RVERHULST * NPREV * (KTOTAL - NPREV) / KTOTAL
+          NEW_SPORES = MAX(DN, 0.0)
+
+          IF (INF_SURF_PREV .GT. 0.0) THEN
+             POT_SPO_PER_AREA = NEW_SPORES / INF_SURF_PREV
+          ELSE
+             POT_SPO_PER_AREA = 0.0
+          END IF
+      END SUBROUTINE F_PPSR_POP
       
-! ------ DAILY VALUE OF INFECTION PROBABILITY - DVIP (Fungicide)
+! ------ DVIP (Daily infection-probability index)
       SUBROUTINE CALC_DVIP(LWD, T, DVIP)
           USE ModuleDefs
           IMPLICIT NONE
-      
           REAL LWD, T
           INTEGER DVIP
-      
           DVIP = 0
-          
-          IF (T < 15.0) THEN  
-          IF (LWD > 14.1) THEN        
-            DVIP = 2
-          ELSEIF (LWD >= 11.1 .AND. LWD <= 14.0) THEN 
-            DVIP = 1
-          ELSEIF (LWD < 11.0) THEN    
-            DVIP = 0
-          ENDIF
-
-        ELSEIF (T >= 15.0 .AND. T < 20.0) THEN 
-          IF (LWD > 17.1) THEN     
-            DVIP = 3
-          ELSEIF (LWD >= 13.1 .AND. LWD <= 17.0) THEN
-            DVIP = 2
-          ELSEIF (LWD >= 7.1 .AND. LWD <= 13.0) THEN 
-            DVIP = 1
-          ELSEIF (LWD < 7.0) THEN   
-            DVIP = 0
-          ENDIF
-
-        ELSEIF (T >= 20.0 .AND. T < 25.0) THEN 
-          IF (LWD > 17.1) THEN        
-            DVIP = 3
-          ELSEIF (LWD >= 10.1 .AND. LWD <= 17.0) THEN 
-            DVIP = 2
-          ELSEIF (LWD >= 7.1 .AND. LWD <= 10.0) THEN  
-            DVIP = 1
-          ELSEIF (LWD < 7.0) THEN     
-            DVIP = 0
-          ENDIF
-
-        ELSEIF (T >= 25.0) THEN            
-          IF (LWD > 17.1) THEN        
-            DVIP = 3
-          ELSEIF (LWD >= 11.1 .AND. LWD <= 17.0) THEN 
-            DVIP = 2
-          ELSEIF (LWD >= 7.1 .AND. LWD <= 11.0) THEN  
-            DVIP = 1
-          ELSEIF (LWD < 7.0) THEN    
-            DVIP = 0
-          ENDIF
-          
-        ENDIF 
-      
+          IF (T .LT. 15.0) THEN  
+            IF (LWD .GT. 14.1) THEN        
+              DVIP = 2
+            ELSEIF (LWD .GE. 11.1 .AND. LWD .LE. 14.0) THEN 
+              DVIP = 1
+            ELSE
+              DVIP = 0
+            ENDIF
+          ELSEIF (T .GE. 15.0 .AND. T .LT. 20.0) THEN 
+            IF (LWD .GT. 17.1) THEN     
+              DVIP = 3
+            ELSEIF (LWD .GE. 13.1 .AND. LWD .LE. 17.0) THEN
+              DVIP = 2
+            ELSEIF (LWD .GE. 7.1  .AND. LWD .LE. 13.0) THEN 
+              DVIP = 1
+            ELSE
+              DVIP = 0
+            ENDIF
+          ELSEIF (T .GE. 20.0 .AND. T .LT. 25.0) THEN 
+            IF (LWD .GT. 17.1) THEN        
+              DVIP = 3
+            ELSEIF (LWD .GE. 10.1 .AND. LWD .LE. 17.0) THEN 
+              DVIP = 2
+            ELSEIF (LWD .GE. 7.1  .AND. LWD .LE. 10.0) THEN  
+              DVIP = 1
+            ELSE
+              DVIP = 0
+            ENDIF
+          ELSE
+            IF (LWD .GT. 17.1) THEN        
+              DVIP = 3
+            ELSEIF (LWD .GE. 11.1 .AND. LWD .LE. 17.0) THEN 
+              DVIP = 2
+            ELSEIF (LWD .GE. 7.1  .AND. LWD .LE. 11.0) THEN  
+              DVIP = 1
+            ELSE
+              DVIP = 0
+            ENDIF
+          ENDIF 
       END SUBROUTINE CALC_DVIP
-      
-! ------ FUNGICIDE DECICION APPLICATIONS
+
+! ------ FUNGICIDE DECISION/APPLICATIONS
       SUBROUTINE APPLY_FUNGICIDE(DVIP_today, DVIP_pts, idx, SUM7, 
      &             BufferDays, FungActive, ResidualDays, NSprays,
      &             USE_FUNGICIDE, HEALTH_LAI)
           USE ModuleDefs
           IMPLICIT NONE
-          
           INTEGER DVIP_today, DVIP_pts(7), idx, SUM7
           INTEGER BufferDays, ResidualDays, NSprays
           LOGICAL FungActive, USE_FUNGICIDE
@@ -679,92 +674,158 @@ C-----------------------------------------------------------------------
           DVIP_pts(idx) = DVIP_today
           idx = MOD(idx,7) + 1
           
-          IF (BufferDays > 0) BufferDays = BufferDays - 1
+          IF (BufferDays .GT. 0) BufferDays = BufferDays - 1
           
           IF (FungActive) THEN
               ResidualDays = ResidualDays - 1
-              IF (ResidualDays <= 0) FungActive = .FALSE.
+              IF (ResidualDays .LE. 0) FungActive = .FALSE.
           END IF
           
-          CAN_SPRAY = (HEALTH_LAI >= 1.5 )
+          CAN_SPRAY = (HEALTH_LAI .GE. 1.5)
           
-          IF (SUM7 >= 6 .AND. BufferDays == 0 .AND. CAN_SPRAY) THEN
+          IF (SUM7 .GE. 6 .AND. BufferDays .EQ. 0 .AND. CAN_SPRAY) THEN
               NSprays = NSprays + 1
-              BufferDays = 16 !periodo de carência para nova aplicação (Godoy et al. 2024)
+              BufferDays = 16
               
               IF (USE_FUNGICIDE) THEN
-                  FungActive = .TRUE.
-                  ResidualDays = 14 !periodo residual de efeito protetivo do produto (Beruski et al. 2020)
+                  FungActive   = .TRUE.
+                  ResidualDays = 14
               ELSE
-                  FungActive = .FALSE.
+                  FungActive   = .FALSE.
                   ResidualDays = 0 
               END IF
-              
           END IF
-          
-      END SUBROUTINE APPLY_FUNGICIDE 
-      
+      END SUBROUTINE APPLY_FUNGICIDE
+
 !=======================================================================
 
 !***********************************************************************
-!     Variable listing (updated 21 May 2025)
+!  Variable listing (fully updated — 16 Aug 2025)
 !***********************************************************************
-! RH = Relative humidity (%)
-! LWD = Leaf wetness duration (h)
-! T_dew = Dew point temperature (oC)
-! Vpsat_o = Saturation Vapor Pressure at Dew Point Temperature (kPa)
-! Vpsat_a = Saturation Vapor Pressure at Air Temperature (kPa)
-!disease_parameters.txt = input parameters values
+! --------------------------- Arguments --------------------------------
+! DYNAMIC           : DSSAT phase flag (RUNINIT/RATE/OUTPUT/SEASEND)
+! CONTROL           : ControlType with %DAS (days after sowing), %RUN, etc.
+! ISWITCH           : SwitchType (not used here; kept for interface parity)
+! Tmin, Tmax (°C)   : Daily min/max air temperature
+! RH (%)            : Relative humidity (either from weather or computed)
+! LAI_TOTAL (m2 m-2): Canopy leaf area index (total)
+! ESP_LAT_HIST(:,:) : State array (MAXDAYS x 5) for cohorts; columns:
+!                     (1)=latent amount (spores m-2),
+!                     (2)=latent progress (0..1),
+!                     (3)=infectious flag (0/1),
+!                     (4)=lesion age (d),
+!                     (5)=secondary inoculum credited today (spores m-2)
+! SUP_INF_LIST(:)   : Infectious surface by day (m2 m-2) → LA_INFECT
+! LAI_INF_LIST(:)   : Cumulative removed LAI by day (m2 m-2) → LA_DISEASE
+! YRDOY             : Current date (YYDOY)
+! YREMRG            : Date of emergence (YYDOY) [not used internally]
+! NVEG0             : DAS threshold for emergence gate
+! YREND             : Harvest/end date (YYDOY)
+! DISEASE_LAI       : OUTPUT — cumulative diseased area (cm2 m-2; printed as m2 m-2)
+
+! --------------------------- Parameters -------------------------------
+! USE_FUNGICIDE     : Toggle for applying fungicide (logic retained)
+! USE_WTH_RH        : Use RH from weather (.TRUE.) or compute via dew point
+! LAI_MIN_START     : Minimal LAI to allow activity (substrate safeguard)
+! MAXDAYS           : Max internal history length (days)
+! EPS               : Small epsilon for safe divisions
+
+! --------------------------- Locals (scalars) -------------------------
+! DAS               : Days after sowing (from CONTROL)
+! T (°C)            : Daily mean air temperature
+! FT                : Combined temperature response (0..1)
+! FT_D, FT_G        : Post-infection and germination temperature responses
+! IR (0..1)         : Infection rate for the day
+! FSS (0..1)        : Canopy fraction supporting spores (capacity fraction)
+! DS (spores m-2)   : Deposited spores today
+! LR (d-1)          : Latency progress rate
+! LS (spores m-2)   : Latent spores added to today's cohort
+! IS (m2 m-2)       : Infectious surface today
+! LA (d)            : Lesion age of a cohort
+! LAF (0..1)        : Lesion-age factor
+! PREV_IS (m2 m-2)  : Infectious surface yesterday
+! LWD (h)           : Leaf wetness duration (capped at 24 h)
+! Tdew (°C)         : Dew point temperature (for optional RH calc)
+! Es, E             : Saturation and actual vapor pressure (Tetens; RH calc)
+! HEALTH_LAI (m2 m-2)      : Healthy/susceptible LAI at day start
+! HEALTH_LAI_AVAIL (m2 m-2): Remaining healthy LAI available for new lesions
+! NEW_LOSS_TODAY (m2 m-2)  : Newly activated (removed) LAI today
+! INF_AREA_K (m2 m-2)      : Infectious area allocated to cohort k today
+! Lesion_Rate (d-1)        : Lesion aging rate
+! ESP_INOC_SEC (spores m-2): Total secondary inoculum produced today
+! SPORES_YEST (spores m-2) : Secondary spores produced yesterday (1-day pool)
+! PREV_LATENTS (spores m-2): Sum of latent individuals (yesterday)
+! INF_COUNT_PREV (#)       : Count of infectious lesions yesterday
+! NPREV_POP (#)            : Population yesterday (spores + latents + lesions)
+! POT_SPO_PER_AREA (sp m-2 d-1 per m2 m-2):
+!                     Potential secondary spores per unit sporulating area
+! PS_K (spores m-2)  : Secondary spores contributed by cohort k today
+! NDS (spores m-2)   : Primary dispersed spores (from parameter file)
+! LESION_S (m2)      : Average lesion surface area
+! KVERHULST (#/LAI)  : Carrying capacity per unit LAI (population space)
+! RVERHULST (d-1)    : Intrinsic logistic rate (population space)
+! YMAX, COF_A, COF_B : Infection response parameters
+! TMIN_G/TOT_G/TMAX_G (°C): Temperature response for germination
+! TMIN_D/TOT_D/TMAX_D (°C): Temperature response for development
+! LDMin (d)          : Minimum latency (used to scale LR)
+! LESLIFEMAX (d)     : Max lesion lifespan (caps aging)
+! DAE                : Days after emergence (internal counter)
+! DAE_START          : DAE at which disease becomes active
+! KMAX               : Upper bound for cohort loop (≤ MIN(DAE,MAXDAYS))
+! DAE_IDX, PREV_IDX  : Indices for today and yesterday in history arrays
+! PLANT_LIVE         : 1 while crop is alive (after emergence gate)
+! DISEASE_LIVE       : 1 after disease activation gate (DAE ≥ DAE_START)
+! DVIP_today         : Daily infection-probability class (0..3)
+! idx (1..7)         : Circular index for 7-day DVIP buffer
+! SUM7               : Sum of last seven DVIP classes
+! BufferDays (d)     : Spray buffer to avoid back-to-back applications
+! ResidualDays (d)   : Fungicide residual protection counter
+! NSprays (#)        : Number of sprays applied
+! FungActive (L)     : Whether fungicide residual is currently active
+! FUNG_EFFICIENCY    : Proportional reduction in IR while active
+
+! --------------------------- Locals (arrays) --------------------------
+! ESP_LAT_HIST(MAXDAYS,5):
+!   (1) latent amount (spores m-2) created on day k
+!   (2) latent progress (0..1) accumulated for cohort k
+!   (3) infectious flag for cohort k (0 or 1)
+!   (4) lesion age (d) for cohort k (advances only after infectious)
+!   (5) secondary inoculum tallied for cohort k on its creation day
 !
-! T = Daily air temperature (oC)
-! TMIN_G = Minimal temperature for spore germination (oC)
-! TOT_G = Optial temperature for spore germination (oC)
-! TMAX_G = Maximum temperature for spore germination (oC)
-! TMIN_D = Minimal temperature for fungal development after germination (oC)
-! TOT_D = Optimal temperature for fungal development after germination (oC)
-! TMAX_D = Maximum temperature for fungal development after germination (oC)
-! FT = Temperature function (0-1)
-! FT_D = Temperature function for fungal development after infection (0-1)
-! FT_G = Temperature function for substract spores that doesn´t germinate (0-1)
+! SUP_INF_LIST(MAXDAYS):
+!   Infectious surface per day (m2 m-2); yesterday’s value used to derive
+!   infectious counts and as denominator for population-based logistic.
 !
-! Ymax = Infection efficiency (0-1)
-! A = Intrinsic increase rate (0-1)
-! B = Intrinsic response to LWD (0-1)
-! IR = Infection rate (0-1)
-!     
-! NDS = Number of dispersed spores (spores/m2)
-! LESION_S = Average lesion surface (m2)
-! FSS = Fraction of suported spores (0-1)
-! DS = Deposited spores (0-1)
+! LAI_INF_LIST(MAXDAYS):
+!   Cumulative removed/sick LAI per day (m2 m-2).
 !
-! LR = Latency rate (0-1)
-! LDMin = Minimal days for latency to end (days)
-! LS = Latent spores (spores/m2)
-! 
-! LAF = Lesion age factor (0-1)
-! PS = Producted spores (spores/m2)
-! PPSR = Rate of potencial spores production (0-1)
-!
-! LESLIFEMAX = Maximum lesions lifespan (days)
-! LA = Lesion age (days)
-!
-! RVERHULST = Number of individuals per day
-! KVERHULST = Maximum number of individuals per LAI unit 
-! PREV_IS = Previous infected surface
-! INFECTIOUS_S = Infectious surface
-! ESP_INOC_SEC_LESION_DAY = Secondary spores producted per day
-!
-! DAE = Days after emergence
-! DISEASE_LAI = Infected and removed LAI (cm2/m2)
-!
-! DVIP_today = Daily infection-probability score (0–3)
-! DVIP_pts = Circular buffer holding the last seven DVIP scores
-! idx = Current position inside the circular buffer (1–7)
-! SUM7 = Moving sum of DVIP scores over the previous seven days
-! BufferDays = Mandatory waiting period (days) between successive sprays
-! ResidualDays = Remaining days of preventive protection conferred by the last spray
-! NSprays = Cumulative number of fungicide applications in the season
-! FungActive = Logical flag; TRUE while preventive protection is active
-! USE_FUNGICIDE = Global switch enabling/disabling the chemical control module
-! CAN_SPRAY = Logical guard that forbids new sprays when healthy LAI < 1 m² m⁻²
-! or when ≤ 15 days remain before the end of the season
+! ADMITTED_AREA(MAXDAYS):
+!   Infectious area actually admitted to cohort k (m2 m-2), capped by
+!   remaining healthy LAI at activation time.
+
+! --------------------------- Subroutines ------------------------------
+! F_TAVG      : Mean temperature
+! F_DEW       : Empirical dew point (for optional RH path)
+! F_RH        : RH from Tetens (uses T and Tdew)
+! F_LWD       : Leaf wetness duration from RH (0..24 h)
+! T_DEV       : Beta-type temperature responses (FT_G, FT_D, FT)
+! F_IR        : Infection rate vs FT and LWD (Ymax, A, B)
+! F_CANSPO    : Canopy spore support fraction (capacity)
+! F_DS        : Deposited spores = FSS * NDS
+! F_LR        : Latency progress rate (FT_D / LDMin)
+! F_LS        : Latent spores = IR * DS (≥ 0)
+! F_LAF       : Lesion-age factor (triangular shape peaking at LESIONAGEOPT)
+! F_LAR       : Lesion aging rate (FT_D / LESLIFEMAX; 0 if FT_D≤0)
+! F_PPSR      : Legacy area-based logistic (kept for compatibility)
+! F_PS        : Legacy secondary inoculum per lesion (compatibility)
+! F_PPSR_POP  : Population-space logistic → spores per unit sporulating area
+! CALC_DVIP   : Daily infection-probability index class (0..3)
+! APPLY_FUNGICIDE:
+!   7-day risk sum trigger; optional spray; residual IR reduction window.
+
+! --------------------------- Files/IO ---------------------------------
+! Unit 23      : Writes daily diagnostics to
+!                C:\DSSAT48\Soybean\DISEASE_DEVELOPMENT.OUT
+! Output cols  : RUN, YYDOY, DAS, LAI_HEALTH, LA_DISEASE, LAI_INFECT,
+!                NEW_LOSS, LWD, RH, FAT_TEMP(=FT), LAI_TOTAL, SUM7, 
+!                NSPRAYS, FUNG_ACT (logical)
