@@ -73,37 +73,35 @@ dssat-csm-os-develop/
 
 ### 1. Compilation
 
-- Add `DISEASE.for` to your DSSAT-CSM project
-- Replace original `CROPGRO.for` with the modified one
+- Add `DISEASE.for` to your DSSAT-CSM project, inside de CROPGRO paste (C:\DSSAT48\Soybean).
+- Replace original `CROPGRO.for` with the modified one, which contains de CROPGRO code with the coupling points.
 - Recompile DSSAT-CSM
 
 ### 2. Input Files
 
-- Create `disease_parameters.txt` in `C:\DSSAT48\Soybean\`
-- Ensure format matches the expectations of `READ_DISEASE_PARAMETERS`
+- Add the `disease_parameters.txt` file in `C:\DSSAT48\Soybean\`.
+- Ensure format matches the expectations of `READ_DISEASE_PARAMETERS`.
 
-### 3. Experiment Activation
-
-In your `.X` experiment file, activate the disease module using the proper switch.
-
-### 4. Output Files
+### 3. Output Files
 
 `DISEASE_DEVELOPMENT.OUT` provides a daily log:
 
-| Column         | Description                              |
-|----------------|------------------------------------------|
-| RUN            | Simulation run ID                        |
-| YYDOY          | Year and day of year                     |
-| DAS            | Days after sowing                        |
-| LAI_HEALTH     | Healthy leaf area                        |
-| LA_DISEASE     | Diseased leaf area                       |
-| LWD            | Leaf Wetness Duration                    |
-| RH             | Relative Humidity                        |
-| FAT_TEMP       | Favorable Temperature                    |
-| LAI_TOTAL      | Total Leaf Area Index                    |
-| SUM7           | 7-day sum of DVIP                        |
-| NSPRAYS        | Number of fungicide applications         |
-| FUNG_ACT       | Indicator of active fungicide effect     |
+| Column       | Units        | Description                                                       | Notes                                                                     |
+| ------------ | ------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `RUN`        | –            | Simulation run ID                                                 | From `CONTROL%RUN`.                                                       |
+| `YYDOY`      | YYDOY        | Calendar date (year + day-of-year)                                | e.g., `25031` = year **2025**, day **031**.                               |
+| `DAS`        | days         | Days after sowing                                                 | From `CONTROL%DAS`.                                                       |
+| `LAI_HEALTH` | m² m⁻²       | Healthy/susceptible leaf area index at the **start** of the day   | Computed as `LAI_TOTAL − cumulative LAI_DISEASE`, bounded ≥ 0.            |
+| `LA_DISEASE` | m² m⁻²       | **Cumulative** diseased/removed LAI                               | Internally tracked in **cm² m⁻²**; divided by 10 000 for output (m² m⁻²). |
+| `LA_INFECT`  | m² m⁻²       | **Instantaneous** infectious (sporulating) leaf surface **today** | Daily total infectious surface; **not** cumulative.                       |
+| `NEW_LOSS`   | m² m⁻² day⁻¹ | Newly activated diseased area **today**                           | Summing `NEW_LOSS` over days reconstructs `LA_DISEASE`.                   |
+| `LWD`        | hours (0–24) | Leaf wetness duration                                             | Derived from RH via a logistic relation; capped at 24 h.                  |
+| `RH`         | %            | Relative humidity                                                 | From weather if enabled; otherwise computed from dew point.               |
+| `FAT_TEMP`   | 0–1          | Favorable temperature factor (`FT`)                               | Combined germination × development temperature response.                  |
+| `LAI_TOTAL`  | m² m⁻²       | Total canopy LAI                                                  | Provided by the host crop model.                                          |
+| `SUM7`       | 0–21         | 7-day rolling sum of DVIP risk classes                            | Each day contributes 0–3; stored as float in file.                        |
+| `NSPRAYS`    | count        | Number of fungicide applications to date                          | Increments per trigger; can be zero if fungicide is disabled.             |
+| `FUNG_ACT`   | logical      | Residual fungicide protection active (`T`/`F`)                    | When `T`, infection rate is reduced by residual efficacy.                 |
 
 ---
 
