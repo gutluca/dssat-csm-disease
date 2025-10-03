@@ -1,0 +1,6 @@
+*DISEASE PARAMETERS
+
+@VAR#   VRNAME............      NDS        LESION_S       KVERHULST       RVERHULST            YMAX           COF_A           COF_B          TMIN_G           TOT_G          TMAX_G          TMIN_D           TOT_D          TMAX_D           LDMin    LESIONAGEOPT      LESLIFEMAX       DAE_START
+!Calibration                      P               P               P               P               G               G               G               G               G               G               G               G               G               G               G               G               G
+
+D00588  AsianSBRust1          50000        0.000002          571400           0.500           0.346           0.283           2.083           9.739          23.921          31.769          11.480          24.933          33.552           6.717           0.761          61.283              30
