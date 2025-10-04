@@ -107,17 +107,19 @@ dssat-csm-os-develop/
 
 ## Citation
 
-If you use this repository in your research, please cite:
+If you use this code or data in your research, please cite this repository as follows:
 
-> Luca, G. A.; Fattori Jr., I. M.; Marin, F.R (2025). *Coupling of an Epidemiological Model for Leaf Diseases with the CROPGRO-Soybean Crop Simulation Model (DSSAT)*. GitHub. [https://github.com/mewing3/dssat-csm-disease.git]
+Luca, G. de A., Fattori Junior, I. M., Del Ponte, E. M., & Marin, F. R. (2025). *Code and data for: Process-Based Simulation of Soybean Rust in Brazil: A DSSAT-Coupled Approach* (Version v1.0.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.17266278
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17266278.svg)](https://doi.org/10.5281/zenodo.17266278)
 
 ---
 
 ## References
 
 - **Fungicide Management Logic**:
-  - Godoy, C. V., et al. (2024). *Embrapa Technical Circular* (Hypothetical)
-  - Beruski, N. D., et al. (2020). *Residual Period of Fungicide Protection* (Hypothetical)
+  - Godoy, C. V., et al. (2024). *Embrapa Technical Circular* 
+  - Beruski, N. D., et al. (2020). *Residual Period of Fungicide Protection* 
 
 - **Epidemiological Model Basis**:
   - Caubel, J., et al. (2017). *European Journal of Agronomy*, 90, 53–66.
