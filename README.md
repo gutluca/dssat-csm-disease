@@ -1,6 +1,6 @@
 # Coupling of an Epidemiological Model for Leaf Fungal Diseases with the CROPGRO-Soybean Crop Simulation Model (DSSAT)
 
-**Authors**: Gustavo de Angelo Luca, Izael Martins Fattori Jr., Fábio Ricardo Marin
+**Authors**: Gustavo de A. Luca, Izael M. Fattori Jr., Emerson M. Del Ponte, Fábio R. Marin
 
 **Affiliation**: University of São Paulo – ESALQ/USP  
 **Version Date**: August 4, 2025
