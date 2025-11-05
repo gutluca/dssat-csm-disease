@@ -1,13 +1,14 @@
 C=======================================================================
-C  DISEASE, Subroutine, Gustavo de Angelo Luca e Izael Martins Fattori Jr
+C  DISEASE, Subroutine, Gustavo de Angelo Luca, Izael Martins Fattori Jr
 C  Universidade de São Paulo - ESALQ USP
 C  
 C-----------------------------------------------------------------------
 C  REVISION HISTORY
 C  07/17/2023 Written.
 C  11/15/2024 Revised.
-C  05/20/2025 Fungicide logic.      
+C  05/20/2025 Fungicide logic. 
 C  08/10/2025 Logic/robustness fixes (cohorts, IR, LAF, LWD, cum. LAI)
+C  11/05/2025 Write func for 'DISEASE_DEVELOPMENT.OUT' improved
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
@@ -116,14 +117,17 @@ C--------- Population (individuals) & potential rate per area -----------
           FUNG_EFFICIENCY = 0.723
 
           SPORES_YEST = 0.0
-
-          OPEN(23, FILE='C:\DSSAT48\Soybean\DISEASE_DEVELOPMENT.OUT',
+          
+          IF (CONTROL%RUN .EQ. 1) THEN
+          OPEN(2333, FILE='C:\DSSAT48\Soybean\DISEASE_DEVELOPMENT.OUT',
      &        STATUS='replace')
-          WRITE(23, 24)
-   24     FORMAT('     RUN   YYDOY     DAS  LAI_HEALTH    LA_DISEASE',
-     &     '  LA_INFECT   NEW_LOSS       LWD         RH      FAT_TEMP',
-     &     '     LAI_TOTAL   SUM7  NSPRAYS FUNG_ACT')
+          WRITE(2333, 24)
+   24     FORMAT('   FILEX     RUN   YYDOY     DAS  LAI_HEALTH',
+     &     '  LA_DISEASE   LA_INFECT    NEW_LOSS         LWD',
+     &     '          RH    FAT_TEMP   LAI_TOTAL        SUM7',
+     &     ' NSPRAYS FUNG_ACT')
 
+          ENDIF
 !***********************************************************************
 !  RATE — called every day
 !***********************************************************************
@@ -191,7 +195,7 @@ C--------- Population (individuals) & potential rate per area -----------
               CALL F_DS(FSS, NDS, DS)
               
               CALL F_IR(FT, LWD, YMAX, COF_A, COF_B, IR)
-              IF ((RH .LT. 85.0) .AND. (LWD .LT. 10.0)) IR = 0.1 * IR
+              !IF ((RH .LT. 85.0) .AND. (LWD .LT. 10.0)) IR = 0.1 * IR
               IF (FungActive) IR = IR * (1.0 - FUNG_EFFICIENCY)
 
 !----- No healthy leaf → no new deposits today --------------------------
@@ -342,7 +346,8 @@ C--------- Population (individuals) & potential rate per area -----------
           
       ELSEIF (DYNAMIC .EQ. OUTPUT) THEN
 
-            WRITE(23, '(3I8, 9F12.3, I8, L2)') CONTROL%RUN, YRDOY,
+            WRITE(2333, '(A8, 3I8, 9F12.3, I8, L2)') CONTROL%FILEX(:8), 
+     &  CONTROL%RUN, YRDOY,     
      &  CONTROL%DAS, HEALTH_LAI, DISEASE_LAI/10000.0, IS,NEW_LOSS_TODAY,
      &  LWD, RH, FT, LAI_TOTAL, REAL(SUM7), NSprays, FungActive
 
@@ -360,7 +365,15 @@ C--------- Population (individuals) & potential rate per area -----------
             DISEASE_LAI  = 0.0
             DAE = 1
             SPORES_YEST  = 0.0
-            CLOSE(23)
+            idx = 1
+            DVIP_pts(:) = 0
+            SUM7 = 0
+            BufferDays = 0
+            ResidualDays = 0
+            !FungActive = .FALSE.
+            NSprays = 0
+            
+					 
       ENDIF
 
       END SUBROUTINE DISEASE_LEAF
@@ -700,7 +713,7 @@ C--------- Population (individuals) & potential rate per area -----------
 !=======================================================================
 
 !***********************************************************************
-!  Variable listing (fully updated — 16 Aug 2025)
+!  Variable listing (updated — 16 Aug 2025)
 !***********************************************************************
 ! --------------------------- Arguments --------------------------------
 ! DYNAMIC           : DSSAT phase flag (RUNINIT/RATE/OUTPUT/SEASEND)
