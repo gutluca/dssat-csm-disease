@@ -8,20 +8,20 @@ C  07/17/2023 Written.
 C  11/15/2024 Revised.
 C  05/20/2025 Fungicide logic. 
 C  08/10/2025 Logic/robustness fixes (cohorts, IR, LAF, LWD, cum. LAI)
-C  11/05/2025 Write func for 'DISEASE_DEVELOPMENT.OUT' improved
+C  11/05/2025 Write func for "DISEASE_DEVELOPMENT.OUT"
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
      &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,       ! Input/State
      &    YRDOY, YREMRG, NVEG0, YREND,                    ! Input
-     &    DISEASE_LAI)                                    ! Output
+     &    DISEASE_LAI, VIRTUAL_PHOTO_FACTOR)              !output
 C-----------------------------------------------------------------------
           USE ModuleDefs     
           IMPLICIT NONE
           EXTERNAL F_RH, F_LWD, T_DEV, F_IR, F_DS, F_CANSPO, F_DEW,
      &             F_TAVG, F_LR, F_LS, F_PS, F_LAF, F_LAR, F_PPSR,
      &             F_PPSR_POP, APPLY_FUNGICIDE, CALC_DVIP,
-     &             READ_DISEASE_PARAMETERS
+     &             READ_DISEASE_PARAMETERS, F_VIRTUAL_LESIONS
           SAVE
 C-----------------------------------------------------------------------
 C  Switches / constants
@@ -64,6 +64,7 @@ C-----------------------------------------------------------------------
           REAL ESP_INOC_SEC
           REAL HEALTH_LAI, HEALTH_LAI_AVAIL, NEW_LOSS_TODAY
           REAL INF_AREA_K
+          REAL s, beta, fvl, VIRTUAL_PHOTO_FACTOR
           
 C--------- Population (individuals) & potential rate per area -----------
           REAL SPORES_YEST, PREV_LATENTS, INF_COUNT_PREV, NPREV_POP
@@ -117,6 +118,7 @@ C--------- Population (individuals) & potential rate per area -----------
           FUNG_EFFICIENCY = 0.723
 
           SPORES_YEST = 0.0
+          VIRTUAL_PHOTO_FACTOR = 1.0
           
           IF (CONTROL%RUN .EQ. 1) THEN
           OPEN(2333, FILE='C:\DSSAT48\Soybean\DISEASE_DEVELOPMENT.OUT',
@@ -151,7 +153,7 @@ C--------- Population (individuals) & potential rate per area -----------
                CALL READ_DISEASE_PARAMETERS(NDS, LESION_S, KVERHULST,
      &            YMAX, COF_A, COF_B, RVERHULST, TMIN_G, TOT_G, TMAX_G,
      &            TMIN_D, TOT_D, TMAX_D, LDmin, LESIONAGEOPT,LESLIFEMAX,
-     &            DAE_START)
+     &            DAE_START, beta)
           END IF
               
 !----- Disease activation (starts after DAE_START) ----------------------
@@ -330,7 +332,23 @@ C--------- Population (individuals) & potential rate per area -----------
 !----- Internal var uses cm2 m-2 (legacy), output will divide by 10000 --
               
               DISEASE_LAI = MIN(LAI_TOTAL,LAI_INF_LIST(DAE_IDX))*10000.0
+              
+!----- Virtual Lesion logic
+          ! Daily fractional severity (only today's new necrosis)
+          IF (HEALTH_LAI .GT. EPS) THEN
+              s = NEW_LOSS_TODAY / HEALTH_LAI
+          ELSE
+              s = 0.0
+          END IF
+          s = MAX(0.0, MIN(s,1.0))
+
+          ! Call subroutine to compute virtual lesion reduction factor (0..1)
+          CALL F_VIRTUAL_LESIONS(s, beta, fvl)
+
+          ! Store result in a global variable to be exported to CROPGRO
+          VIRTUAL_PHOTO_FACTOR = fvl
           
+!----- ------------------------------------------------------          
           ELSE
               HEALTH_LAI = LAI_TOTAL
           END IF
@@ -390,7 +408,7 @@ C--------- Population (individuals) & potential rate per area -----------
      &                                  RVERHULST, TMIN_G, TOT_G,TMAX_G,
      &                                  TMIN_D, TOT_D, TMAX_D,    
      &                                  LDmin, LESIONAGEOPT, LESLIFEMAX,
-     &                                  DAE_START)
+     &                                  DAE_START, beta)
 
           IMPLICIT NONE
           
@@ -398,7 +416,7 @@ C--------- Population (individuals) & potential rate per area -----------
           REAL    YMAX, COF_A, COF_B
           REAL    TMIN_G, TOT_G, TMAX_G
           REAL    TMIN_D, TOT_D, TMAX_D
-          REAL    LDmin, LESIONAGEOPT, LESLIFEMAX
+          REAL    LDmin, LESIONAGEOPT, LESLIFEMAX, beta
           INTEGER DAE_START
 
           CHARACTER(LEN=6)  ID       
@@ -422,7 +440,7 @@ C--------- Population (individuals) & potential rate per area -----------
      &             TMIN_G, TOT_G, TMAX_G,               
      &             TMIN_D, TOT_D, TMAX_D,               
      &             LDmin, LESIONAGEOPT, LESLIFEMAX,
-     &             DAE_START
+     &             DAE_START, beta
 
           CLOSE(UNIT)
 
@@ -456,7 +474,7 @@ C--------- Population (individuals) & potential rate per area -----------
           RH = MAX((E / Es) * 100.0, 0.0)
       END SUBROUTINE F_RH
       
-! ------ LEAF WETNESS DURATION (no side-effect on RH)
+! ------ LEAF WETNESS DURATION 
       SUBROUTINE F_LWD(RH, LWD)
           USE ModuleDefs
           IMPLICIT NONE
@@ -474,26 +492,39 @@ C--------- Population (individuals) & potential rate per area -----------
 ! ------ TEMPERATURE DEVELOPMENT FUNCTION (beta response)
       SUBROUTINE T_DEV (T, TMIN_G, TOT_G, TMAX_G, TMIN_D, TOT_D, TMAX_D,
      &                  FT, FT_D, FT_G)
-          USE ModuleDefs
-          IMPLICIT NONE
-          REAL FT_D, FT_G, FT, T
-          REAL TMIN_D, TOT_D, TMAX_D, TMIN_G, TOT_G, TMAX_G
+      USE ModuleDefs
+      IMPLICIT NONE
+      REAL FT_D, FT_G, FT, T
+      REAL TMIN_D, TOT_D, TMAX_D, TMIN_G, TOT_G, TMAX_G
+ 
+      ! ---- FT_G ---- (spores germination)
+      FT_G = 0.0
+      IF ((TMAX_G-T) > 0.0 .AND. (TMAX_G-TOT_G) /= 0.0 .AND.
+     &    (T-TMIN_G) > 0.0 .AND. (TOT_G-TMIN_G) /= 0.0) THEN
+          FT_G = ((TMAX_G-T)/(TMAX_G-TOT_G)) *
+     &    ((T-TMIN_G)/(TOT_G-TMIN_G))**((TOT_G-TMIN_G)/(TMAX_G-TOT_G))
           
-          FT_G = ((TMAX_G-T)/(TMAX_G-TOT_G)) * ((T-TMIN_G)/
-     &           (TOT_G-TMIN_G))**((TOT_G-TMIN_G)/(TMAX_G-TOT_G)) 
+      END IF
+
+      ! ---- FT_D ----
+      IF (T .GT. TMIN_D .AND. (TMAX_D-TOT_D) /= 0.0 .AND. 
+     &      (TOT_D-TMIN_D) /= 0.0) THEN
           
-          IF (T .GT. TMIN_D) THEN
-              FT_D = ((TMAX_D-T)/(TMAX_D-TOT_D)) * ((T-TMIN_D)/
-     &               (TOT_D-TMIN_D))**((TOT_D-TMIN_D)/(TMAX_D-TOT_D))
-          ELSE
-              FT_D = 0.0
-          END IF
+         IF ((TMAX_D-T) > 0.0 .AND. (T-TMIN_D) > 0.0) THEN
+             FT_D = ((TMAX_D-T)/(TMAX_D-TOT_D)) *
+     &      ((T-TMIN_D)/(TOT_D-TMIN_D))**((TOT_D-TMIN_D)/(TMAX_D-TOT_D))
+             
+         ELSE
+             FT_D = 0.0
+         END IF
+         
+      ELSE
+         FT_D = 0.0
+      END IF
+
+      ! --------
+      FT = MAX(MIN(FT_G * FT_D, 1.0), 0.0)
       
-          IF ((T .LT. 12.0) .OR. (T .GT. 32.0)) THEN
-              FT = 0.0
-          ELSE
-              FT = MAX(MIN(FT_G * FT_D, 1.0), 0.0)
-          END IF
       END SUBROUTINE T_DEV
 
 ! ------ INFECTION RATE
@@ -525,7 +556,7 @@ C--------- Population (individuals) & potential rate per area -----------
           DS = FSS * NDS
       END SUBROUTINE F_DS
 
-! ------ LATENCY RATE (uses FT_D; no re-computation)
+! ------ LATENCY RATE 
       SUBROUTINE F_LR(FT_D, LDmin, LR)
           USE ModuleDefs
           IMPLICIT NONE
@@ -541,7 +572,7 @@ C--------- Population (individuals) & potential rate per area -----------
           LS = MAX(IR * DS, 0.0)
       END SUBROUTINE F_LS
 
-! ------ SPORES PRODUCTION (secondary inoculum) — kept for compatibility
+! ------ SPORES PRODUCTION (secondary inoculum) 
       SUBROUTINE F_PS(PPSR, LESION_S, FT_D, LAF, PS)
           USE ModuleDefs
           IMPLICIT NONE
@@ -576,8 +607,7 @@ C--------- Population (individuals) & potential rate per area -----------
           LAF = MAX(MIN(TMP, 1.0), 0.0)
       END SUBROUTINE F_LAF
 
-! ------ POTENTIAL SPORE RATE (legacy logistic, area-based)
-!  (not used in core; kept for compatibility)
+! ------ POTENTIAL SPORE RATE 
       SUBROUTINE F_PPSR(KVERHULST, RVERHULST, INFECTIOUS_S, PREV_IS,LAI,
      &                  PPSR)
           USE ModuleDefs
@@ -691,7 +721,10 @@ C--------- Population (individuals) & potential rate per area -----------
           
           IF (FungActive) THEN
               ResidualDays = ResidualDays - 1
-              IF (ResidualDays .LE. 0) FungActive = .FALSE.
+              IF (ResidualDays .LE. 0) THEN 
+                  FungActive = .FALSE.
+                  SUM7 = 0 
+              END IF
           END IF
           
           CAN_SPRAY = (HEALTH_LAI .GE. 1.5)
@@ -709,11 +742,26 @@ C--------- Population (individuals) & potential rate per area -----------
               END IF
           END IF
       END SUBROUTINE APPLY_FUNGICIDE
+      
+! ------ VIRTUAL LESIONS 
+      SUBROUTINE F_VIRTUAL_LESIONS(s, beta, fvl)
+          USE ModuleDefs
+          IMPLICIT NONE
+          
+          REAL s      ! fractionary severity (0-1)
+          REAL beta   ! β parameter for virtual lesions 
+          REAL fvl    ! multiplier factor 
+          
+          fvl = (1.0 - MAX(0.0, MIN(s,1.0)))**beta
+          fvl = MAX(0.0, MIN(fvl, 1.0))
+          
+      END SUBROUTINE F_VIRTUAL_LESIONS
+      
 
 !=======================================================================
 
 !***********************************************************************
-!  Variable listing (updated — 16 Aug 2025)
+!  Variable listing 
 !***********************************************************************
 ! --------------------------- Arguments --------------------------------
 ! DYNAMIC           : DSSAT phase flag (RUNINIT/RATE/OUTPUT/SEASEND)
@@ -796,6 +844,10 @@ C--------- Population (individuals) & potential rate per area -----------
 ! NSprays (#)        : Number of sprays applied
 ! FungActive (L)     : Whether fungicide residual is currently active
 ! FUNG_EFFICIENCY    : Proportional reduction in IR while active
+! s    : Daily fractional severity (0-1). Computed as NEW_LOSS_TODAY / HEALTH_LAI. Represents today's proportion of newly necrosed leaf area.
+! beta : Empirical parameter read from DISEASE_PARAMETERS.TXT. Controls the intensity of physiological reduction in green tissue.
+! fvl  : Virtual lesion reduction factor (0-1). Computed by F_VIRTUAL_LESIONS as (1 - s)**beta. Reduces the effective daily C-assimilation potential.
+! VIRTUAL_PHOTO_FACTOR  : Exported variable to CROPGRO (0-1). Receives fvl at RATE stage and is used inside CROPGRO to reduce PGAVL (PGAVL = PGAVL * VIRTUAL_PHOTO_FACTOR).
 
 ! --------------------------- Locals (arrays) --------------------------
 ! ESP_LAT_HIST(MAXDAYS,5):
@@ -835,6 +887,7 @@ C--------- Population (individuals) & potential rate per area -----------
 ! CALC_DVIP   : Daily infection-probability index class (0..3)
 ! APPLY_FUNGICIDE:
 !   7-day risk sum trigger; optional spray; residual IR reduction window.
+! F_VIRTUAL_LESIONS: Simulates the green leaf area around the necrotic area that does less photosynthesis due to the disease stress)
 
 ! --------------------------- Files/IO ---------------------------------
 ! Unit 23      : Writes daily diagnostics to

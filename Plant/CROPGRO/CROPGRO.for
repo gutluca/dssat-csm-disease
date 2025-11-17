@@ -178,12 +178,12 @@ C=======================================================================
 !     K model (not yet implemented)
       REAL KSTRES
       
-!     Disease - Izael Fattori
+!     Disease
       REAL, DIMENSION(200,5) :: ESP_LAT_HIST
       REAL, DIMENSION(200) :: SUP_INF_LIST
       REAL, DIMENSION(200) :: LAI_INF_LIST
 
-      REAL HEALTH_LAI, DISEASE_LAI
+      REAL HEALTH_LAI, DISEASE_LAI, VIRTUAL_PHOTO_FACTOR
 
 !-----------------------------------------------------------------------
 !     Define constructed variable types based on definitions in
@@ -276,12 +276,12 @@ C=======================================================================
      &    YRNR2, YRNR3, YRNR5, YRNR7)                     !Output
       
       !-----------------------------------------------------------------------
-! - Izael Fattori
+! - Disease
       CALL DISEASE_LEAF(DYNAMIC,
-     &    CONTROL, ISWITCH, TMIN, TMAX, RHUM, XLAI,            !Input
+     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,        !Input
      &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
      &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-     &    DISLA)                                         !Output
+     &    DISLA,VIRTUAL_PHOTO_FACTOR)                     !Output
 
 
 !-----------------------------------------------------------------------
@@ -733,12 +733,12 @@ C-----------------------------------------------------------------------
       ENDIF
       
 !----------------------------------------------------------------------   
-      ! - Izael Fattori
+      ! Disease
       CALL DISEASE_LEAF(DYNAMIC,
-     &    CONTROL, ISWITCH, TMIN, TMAX, RHUM, XLAI,            !Input
+     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,            !Input
      &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
      &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-     &    DISLA)                                         !Output
+     &    DISLA,VIRTUAL_PHOTO_FACTOR)                   !Output
 
 !----------------------------------------------------------------------
       IF (ISWDIS .EQ. 'Y') THEN
@@ -892,10 +892,10 @@ C-----------------------------------------------------------------------
         ENDIF
       
       CALL DISEASE_LEAF(DYNAMIC,
-     &    CONTROL, ISWITCH, TMIN, TMAX, RHUM,XLAI,            !Input
+     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,       !Input
      &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
      &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-     &    DISLA)                                         !Output
+     &    DISLA,VIRTUAL_PHOTO_FACTOR)                    !Output
 
 !-----------------------------------------------------------------------
       ENDIF
@@ -943,6 +943,12 @@ C-----------------------------------------------------------------------
       ELSE
         PGAVL = PGAVL - MAINR
       ENDIF
+      
+!-----------------------------------------------------------------------
+!     Reduce PGAVL by disease physiological stress (virtual lesions)
+!-----------------------------------------------------------------------
+      PGAVL = PGAVL * VIRTUAL_PHOTO_FACTOR !Disease
+      
 !-----------------------------------------------------------------------
 !     Reduce PGAVL if pest damage occurs to C assimilation
 !     Moved to PEST module - chp
@@ -1323,10 +1329,10 @@ C-----------------------------------------------------------------------
         ENDIF
         
         CALL DISEASE_LEAF(DYNAMIC,
-     &    CONTROL, ISWITCH, TMIN, TMAX, RHUM, XLAI,            !Input
+     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,            !Input
      &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
      &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-     &    DISLA)                                         !Output
+     &    DISLA,VIRTUAL_PHOTO_FACTOR)                      !Output
 
         CALL PODS(DYNAMIC, 
      &    AGRSD1, AGRSH1, DLAYR, DRPP, DUL, FILECC,       !Input
@@ -1400,12 +1406,12 @@ C-----------------------------------------------------------------------
         SENESCE % ResLig = 0.0
         SENESCE % ResE   = 0.0
         
-! Izael 
+! Disease 
         CALL DISEASE_LEAF(DYNAMIC,
-     &    CONTROL, ISWITCH, TMIN, TMAX, RHUM, XLAI,            !Input
+     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,            !Input
      &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
      &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-     &    DISLA)                                         !Output
+     &    DISLA, VIRTUAL_PHOTO_FACTOR)                    !Output
       ENDIF
 
 !***********************************************************************
