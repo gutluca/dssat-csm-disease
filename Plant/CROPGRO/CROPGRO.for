@@ -947,7 +947,7 @@ C-----------------------------------------------------------------------
 !-----------------------------------------------------------------------
 !     Reduce PGAVL by disease physiological stress (virtual lesions)
 !-----------------------------------------------------------------------
-      PGAVL = PGAVL * VIRTUAL_PHOTO_FACTOR !Disease
+      PGAVL = PGAVL * VIRTUAL_PHOTO_FACTOR !Dismo
 !-----------------------------------------------------------------------
 !     Reduce PGAVL if pest damage occurs to C assimilation
 !     Moved to PEST module - chp
