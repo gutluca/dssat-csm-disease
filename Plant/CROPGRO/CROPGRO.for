@@ -279,8 +279,8 @@ C=======================================================================
 ! - Disease
       CALL DISEASE_LEAF(DYNAMIC,
      &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,        !Input
-     &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
-     &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
+     &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,       !Input
+     &    YRDOY, YREMRG, NVEG0, YREND,                    !Input
      &    DISLA,VIRTUAL_PHOTO_FACTOR)                     !Output
 
 
@@ -735,10 +735,10 @@ C-----------------------------------------------------------------------
 !----------------------------------------------------------------------   
       ! Disease
       CALL DISEASE_LEAF(DYNAMIC,
-     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,            !Input
+     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,       !Input
      &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
      &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-     &    DISLA,VIRTUAL_PHOTO_FACTOR)                   !Output
+     &    DISLA,VIRTUAL_PHOTO_FACTOR)                    !Output
 
 !----------------------------------------------------------------------
       IF (ISWDIS .EQ. 'Y') THEN
@@ -948,7 +948,6 @@ C-----------------------------------------------------------------------
 !     Reduce PGAVL by disease physiological stress (virtual lesions)
 !-----------------------------------------------------------------------
       PGAVL = PGAVL * VIRTUAL_PHOTO_FACTOR !Disease
-      
 !-----------------------------------------------------------------------
 !     Reduce PGAVL if pest damage occurs to C assimilation
 !     Moved to PEST module - chp

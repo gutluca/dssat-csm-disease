@@ -1,5 +1,5 @@
 C=======================================================================
-C  DISEASE, Subroutine, Gustavo de Angelo Luca, Izael Martins Fattori Jr
+C  DISMO, Subroutine, Gustavo de Angelo Luca, Izael Martins Fattori Jr
 C  Universidade de São Paulo - ESALQ USP
 C  
 C-----------------------------------------------------------------------
@@ -9,12 +9,13 @@ C  11/15/2024 Revised.
 C  05/20/2025 Fungicide logic. 
 C  08/10/2025 Logic/robustness fixes (cohorts, IR, LAF, LWD, cum. LAI)
 C  11/05/2025 Write func for "DISEASE_DEVELOPMENT.OUT"
+C  11/17/2025 Virtual lesions factor added.
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
      &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,       ! Input/State
      &    YRDOY, YREMRG, NVEG0, YREND,                    ! Input
-     &    DISEASE_LAI, VIRTUAL_PHOTO_FACTOR)              !output
+     &    DISEASE_LAI, VIRTUAL_PHOTO_FACTOR)              ! output
 C-----------------------------------------------------------------------
           USE ModuleDefs     
           IMPLICIT NONE
@@ -456,7 +457,7 @@ C--------- Population (individuals) & potential rate per area -----------
           T = (Tmax + Tmin) / 2.0
       END SUBROUTINE F_TAVG
       
-! ------ DEW POINT TEMPERATURE (empirical)
+! ------ DEW POINT TEMPERATURE 
       SUBROUTINE F_DEW(T, Tmin, Tmax, Tdew)
           USE ModuleDefs
           IMPLICIT NONE
@@ -464,7 +465,7 @@ C--------- Population (individuals) & potential rate per area -----------
           Tdew = (-0.036*T) + (0.9679*Tmin)+(0.0072*(Tmax-Tmin)) +1.0111
       END SUBROUTINE F_DEW
       
-! ------ RELATIVE HUMIDITY (Tetens form) -> RH in %
+! ------ RELATIVE HUMIDITY (Tetens form)
       SUBROUTINE F_RH(RH, Tdew, Es, E, T)
           USE ModuleDefs
           IMPLICIT NONE
@@ -749,7 +750,7 @@ C--------- Population (individuals) & potential rate per area -----------
           IMPLICIT NONE
           
           REAL s      ! fractionary severity (0-1)
-          REAL beta   ! β parameter for virtual lesions 
+          REAL beta   ! β parameter for virtual lesions; for P. Pachyrhizi = 2.5 (Primiano & Amorim, 2020)
           REAL fvl    ! multiplier factor 
           
           fvl = (1.0 - MAX(0.0, MIN(s,1.0)))**beta
@@ -844,7 +845,7 @@ C--------- Population (individuals) & potential rate per area -----------
 ! NSprays (#)        : Number of sprays applied
 ! FungActive (L)     : Whether fungicide residual is currently active
 ! FUNG_EFFICIENCY    : Proportional reduction in IR while active
-! s    : Daily fractional severity (0-1). Computed as NEW_LOSS_TODAY / HEALTH_LAI. Represents today's proportion of newly necrosed leaf area.
+! s    : Daily fractional severity (0-1), Represents today's proportion of newly necrosed leaf area.
 ! beta : Empirical parameter read from DISEASE_PARAMETERS.TXT. Controls the intensity of physiological reduction in green tissue.
 ! fvl  : Virtual lesion reduction factor (0-1). Computed by F_VIRTUAL_LESIONS as (1 - s)**beta. Reduces the effective daily C-assimilation potential.
 ! VIRTUAL_PHOTO_FACTOR  : Exported variable to CROPGRO (0-1). Receives fvl at RATE stage and is used inside CROPGRO to reduce PGAVL (PGAVL = PGAVL * VIRTUAL_PHOTO_FACTOR).
