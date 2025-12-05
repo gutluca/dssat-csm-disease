@@ -73,7 +73,7 @@ dssat-csm-os-develop/
 
 ### 1. Compilation
 
-- Add `DISEASE.for` to your DSSAT-CSM project, inside de CROPGRO paste (C:\DSSAT48\Soybean).
+- Add `DISMO.for` to your DSSAT-CSM project, inside de CROPGRO paste (C:\DSSAT48\Soybean).
 - Replace original `CROPGRO.for` with the modified one, which contains de CROPGRO code with the coupling points.
 - Recompile DSSAT-CSM
 
