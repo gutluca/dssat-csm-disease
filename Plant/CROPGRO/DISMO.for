@@ -1,6 +1,7 @@
 C=======================================================================
-C  DISMO, Subroutine, Gustavo de Angelo Luca, Izael Martins Fattori Jr
-C  Universidade de São Paulo - ESALQ USP
+C  Disease Impact and Severity Module
+C  DISMO, Subroutine, Gustavo de Angelo Luca & Izael Martins Fattori Jr
+C  Luiz de Queiroz College of Agriculture (ESALQ), University of São Paulo, Piracicaba, Brazil
 C  
 C-----------------------------------------------------------------------
 C  REVISION HISTORY
@@ -10,19 +11,20 @@ C  05/20/2025 Fungicide logic.
 C  08/10/2025 Logic/robustness fixes (cohorts, IR, LAF, LWD, cum. LAI)
 C  11/05/2025 Write func for "DISEASE_DEVELOPMENT.OUT"
 C  11/17/2025 Virtual lesions factor added.
+C  12/09/2025 Severity calculation in output file
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
      &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,       ! Input/State
      &    YRDOY, YREMRG, NVEG0, YREND,                    ! Input
-     &    DISEASE_LAI, VIRTUAL_PHOTO_FACTOR)              ! output
+     &    DISEASE_LAI, VIRTUAL_PHOTO_FACTOR)              ! Output
 C-----------------------------------------------------------------------
           USE ModuleDefs     
           IMPLICIT NONE
           EXTERNAL F_RH, F_LWD, T_DEV, F_IR, F_DS, F_CANSPO, F_DEW,
      &             F_TAVG, F_LR, F_LS, F_PS, F_LAF, F_LAR, F_PPSR,
      &             F_PPSR_POP, APPLY_FUNGICIDE, CALC_DVIP,
-     &             READ_DISEASE_PARAMETERS, F_VIRTUAL_LESIONS
+     &             READ_DISEASE_PARAMETERS, F_VIRTUAL_LESIONS,F_SEVERITY
           SAVE
 C-----------------------------------------------------------------------
 C  Switches / constants
@@ -82,6 +84,8 @@ C--------- Population (individuals) & potential rate per area -----------
           LOGICAL FungActive
           INTEGER DVIP_today
           REAL FUNG_EFFICIENCY
+          REAL, SAVE :: LAI_PEAK_SEASON
+          REAL, SAVE :: SEVERITY_PCT
           
 !-----------------------------------------------------------------------
 !         Constructed types
@@ -117,6 +121,8 @@ C--------- Population (individuals) & potential rate per area -----------
           FungActive = .FALSE.
           NSprays = 0
           FUNG_EFFICIENCY = 0.723
+          LAI_PEAK_SEASON = 0.0
+          SEVERITY_PCT    = 0.0
 
           SPORES_YEST = 0.0
           VIRTUAL_PHOTO_FACTOR = 1.0
@@ -128,7 +134,7 @@ C--------- Population (individuals) & potential rate per area -----------
    24     FORMAT('   FILEX     RUN   YYDOY     DAS  LAI_HEALTH',
      &     '  LA_DISEASE   LA_INFECT    NEW_LOSS         LWD',
      &     '          RH    FAT_TEMP   LAI_TOTAL        SUM7',
-     &     ' NSPRAYS FUNG_ACT')
+     &     ' NSPRAYS FUNG_ACT Severity%')
 
           ENDIF
 !***********************************************************************
@@ -330,9 +336,14 @@ C--------- Population (individuals) & potential rate per area -----------
                  LAI_INF_LIST(DAE_IDX) = NEW_LOSS_TODAY
               END IF
 
-!----- Internal var uses cm2 m-2 (legacy), output will divide by 10000 --
+!----- Internal var uses cm2 m-2, output will divide by 10000 --
               
               DISEASE_LAI = MIN(LAI_TOTAL,LAI_INF_LIST(DAE_IDX))*10000.0
+              
+!----- Calculate disease severity --
+              
+              CALL F_SEVERITY(LAI_TOTAL, LAI_INF_LIST(DAE_IDX), 
+     &                        LAI_PEAK_SEASON, SEVERITY_PCT)
               
 !----- Virtual Lesion logic
           ! Daily fractional severity (only today's new necrosis)
@@ -365,10 +376,12 @@ C--------- Population (individuals) & potential rate per area -----------
           
       ELSEIF (DYNAMIC .EQ. OUTPUT) THEN
 
-            WRITE(2333, '(A8, 3I8, 9F12.3, I8, L2)') CONTROL%FILEX(:8), 
+            WRITE(2333, '(A8, 3I8, 9F12.3, I8, L9, F10.2)') 
+     &  CONTROL%FILEX(:8), 
      &  CONTROL%RUN, YRDOY,     
      &  CONTROL%DAS, HEALTH_LAI, DISEASE_LAI/10000.0, IS,NEW_LOSS_TODAY,
-     &  LWD, RH, FT, LAI_TOTAL, REAL(SUM7), NSprays, FungActive
+     &  LWD, RH, FT, LAI_TOTAL, REAL(SUM7), NSprays, FungActive,
+     &  SEVERITY_PCT
 
 !***********************************************************************
 !  SEASEND — called once (season end)
@@ -391,8 +404,9 @@ C--------- Population (individuals) & potential rate per area -----------
             ResidualDays = 0
             !FungActive = .FALSE.
             NSprays = 0
-            
-					 
+            LAI_PEAK_SEASON = 0.0
+            SEVERITY_PCT    = 0.0
+            	 
       ENDIF
 
       END SUBROUTINE DISEASE_LEAF
@@ -457,7 +471,7 @@ C--------- Population (individuals) & potential rate per area -----------
           T = (Tmax + Tmin) / 2.0
       END SUBROUTINE F_TAVG
       
-! ------ DEW POINT TEMPERATURE 
+! ------ DEW POINT TEMPERATURE (empirical)
       SUBROUTINE F_DEW(T, Tmin, Tmax, Tdew)
           USE ModuleDefs
           IMPLICIT NONE
@@ -507,7 +521,7 @@ C--------- Population (individuals) & potential rate per area -----------
           
       END IF
 
-      ! ---- FT_D ----
+      ! ---- FT_D ---- (general fungal development)
       IF (T .GT. TMIN_D .AND. (TMAX_D-TOT_D) /= 0.0 .AND. 
      &      (TOT_D-TMIN_D) /= 0.0) THEN
           
@@ -654,7 +668,7 @@ C--------- Population (individuals) & potential rate per area -----------
           END IF
       END SUBROUTINE F_PPSR_POP
       
-! ------ DVIP (Daily infection-probability index)
+! ------ DVIP (Daily infection-probability index) (Beruski et al., 2020)
       SUBROUTINE CALC_DVIP(LWD, T, DVIP)
           USE ModuleDefs
           IMPLICIT NONE
@@ -744,20 +758,44 @@ C--------- Population (individuals) & potential rate per area -----------
           END IF
       END SUBROUTINE APPLY_FUNGICIDE
       
-! ------ VIRTUAL LESIONS 
+! ------ VIRTUAL LESIONS (Primiano & Amorim, 2020)
       SUBROUTINE F_VIRTUAL_LESIONS(s, beta, fvl)
           USE ModuleDefs
           IMPLICIT NONE
           
           REAL s      ! fractionary severity (0-1)
-          REAL beta   ! β parameter for virtual lesions; for P. Pachyrhizi = 2.5 (Primiano & Amorim, 2020)
+          REAL beta   ! β parameter for virtual lesions 
           REAL fvl    ! multiplier factor 
           
           fvl = (1.0 - MAX(0.0, MIN(s,1.0)))**beta
           fvl = MAX(0.0, MIN(fvl, 1.0))
           
       END SUBROUTINE F_VIRTUAL_LESIONS
+
+! ------ SEVERITY
+      SUBROUTINE F_SEVERITY(LAI_CUR, LAI_DIS_ACCUM, LAI_PEAK, SEV_MONO)
+          USE ModuleDefs
+          IMPLICIT NONE
+ 
+          REAL, INTENT(IN)    :: LAI_CUR        
+          REAL, INTENT(IN)    :: LAI_DIS_ACCUM  
+          
+          REAL, INTENT(INOUT) :: LAI_PEAK       
+          REAL, INTENT(INOUT) :: SEV_MONO
+          
+          REAL :: RAW_SEV, PEAK_SAFE
+
+          LAI_PEAK = MAX(LAI_PEAK, LAI_CUR)
+          PEAK_SAFE = MAX(LAI_PEAK, 1.0E-6)
+          RAW_SEV = (LAI_DIS_ACCUM / PEAK_SAFE) * 100.0
+          SEV_MONO = MAX(SEV_MONO, RAW_SEV)
+    
+          SEV_MONO = MIN(SEV_MONO, 100.0)
+
+      END SUBROUTINE F_SEVERITY
       
+
+!=======================================================================
 
 !***********************************************************************
 !  Variable listing 
@@ -843,11 +881,20 @@ C--------- Population (individuals) & potential rate per area -----------
 ! NSprays (#)        : Number of sprays applied
 ! FungActive (L)     : Whether fungicide residual is currently active
 ! FUNG_EFFICIENCY    : Proportional reduction in IR while active
-! s    : Daily fractional severity (0-1), Represents today's proportion of newly necrosed leaf area.
+! s    : Daily fractional severity (0-1). Computed as NEW_LOSS_TODAY / HEALTH_LAI. Represents today's proportion of newly necrosed leaf area.
 ! beta : Empirical parameter read from DISEASE_PARAMETERS.TXT. Controls the intensity of physiological reduction in green tissue.
 ! fvl  : Virtual lesion reduction factor (0-1). Computed by F_VIRTUAL_LESIONS as (1 - s)**beta. Reduces the effective daily C-assimilation potential.
 ! VIRTUAL_PHOTO_FACTOR  : Exported variable to CROPGRO (0-1). Receives fvl at RATE stage and is used inside CROPGRO to reduce PGAVL (PGAVL = PGAVL * VIRTUAL_PHOTO_FACTOR).
-
+! LAI_PEAK_SEASON (m2 m-2): State variable (SAVE). Tracks the maximum value of 
+!                           LAI_TOTAL observed throughout the current season. 
+!                           Used as the denominator to normalize severity, preventing
+!                           false 100% values during senescence.
+!
+! SEVERITY_PCT (%): OUTPUT variable (SAVE). Monotonous disease severity.
+!                   Calculated as (LA_DISEASE / LAI_PEAK_SEASON) * 100.
+!                   Contains the "blinded" value that never decreases,
+!                   ensuring consistent AUDPC calculation.   
+      
 ! --------------------------- Locals (arrays) --------------------------
 ! ESP_LAT_HIST(MAXDAYS,5):
 !   (1) latent amount (spores m-2) created on day k
@@ -893,4 +940,4 @@ C--------- Population (individuals) & potential rate per area -----------
 !                C:\DSSAT48\Soybean\DISEASE_DEVELOPMENT.OUT
 ! Output cols  : RUN, YYDOY, DAS, LAI_HEALTH, LA_DISEASE, LAI_INFECT,
 !                NEW_LOSS, LWD, RH, FAT_TEMP(=FT), LAI_TOTAL, SUM7, 
-!                NSPRAYS, FUNG_ACT (logical)
+!                NSPRAYS, FUNG_ACT (logical), Severity%
