@@ -61,7 +61,7 @@ Includes a rule-based system to simulate fungicide applications.
 
 ```bash
 dssat-csm-os-develop/
-├── DISEASE.for               # New disease module (DISEASE_LEAF)
+├── DISMO.for               # New disease module (DISEASE_LEAF)
 ├── CROPGRO.for               # Modified to integrate disease model
 ├── disease_parameters.txt    # Input file with pathogen-specific parameters
 ├── DISEASE_DEVELOPMENT.OUT   # Output file with daily disease progress
