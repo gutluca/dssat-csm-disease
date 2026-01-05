@@ -3,7 +3,6 @@
 **Authors**: Gustavo de A. Luca, Izael M. Fattori Jr., Fábio R. Marin
 
 **Affiliation**: University of São Paulo – ESALQ/USP  
-**Version Date**: August 4, 2025
 
 ---
 
