@@ -204,7 +204,7 @@ C--------- Population (individuals) & potential rate per area -----------
               CALL F_DS(FSS, NDS, DS)
               
               CALL F_IR(FT, LWD, YMAX, COF_A, COF_B, IR)
-              !IF ((RH .LT. 85.0) .AND. (LWD .LT. 10.0)) IR = 0.1 * IR
+              
               IF (FungActive) IR = IR * (1.0 - FUNG_EFFICIENCY)
 
 !----- No healthy leaf → no new deposits today --------------------------
@@ -274,7 +274,7 @@ C--------- Population (individuals) & potential rate per area -----------
                   IF ((ESP_LAT_HIST(k, 2) .GE. 1.0) .AND.
      &                (ESP_LAT_HIST(k, 3) .EQ. 0.0)) THEN
                        ESP_LAT_HIST(k, 3) = 1.0
-                       ! allocate effective area respecting remaining healthy leaf
+                  ! allocate effective area respecting remaining healthy leaf
                        INF_AREA_K = ESP_LAT_HIST(k,1) * LESION_S
                        INF_AREA_K = MAX(INF_AREA_K, 0.0)
                        HEALTH_LAI_AVAIL = MAX(HEALTH_LAI - 
@@ -668,52 +668,55 @@ C--------- Population (individuals) & potential rate per area -----------
           END IF
       END SUBROUTINE F_PPSR_POP
       
-! ------ DVIP (Daily infection-probability index) (Beruski et al., 2020)
+! ------ DVIP (Daily infection-probability index) 
+! Implementation of Beruski et al. (2020) Plant Disease.
+
       SUBROUTINE CALC_DVIP(LWD, T, DVIP)
           USE ModuleDefs
           IMPLICIT NONE
-          REAL LWD, T
-          INTEGER DVIP
+          
+          REAL, INTENT(IN)     :: LWD, T
+          INTEGER, INTENT(OUT) :: DVIP
+          
+          ! Local variables
+          REAL NLes, TERM_LWD, TERM_TEMP, EXP_VAL 
+          
+          REAL, PARAMETER :: A_COEFF = 12.611
+          
+          REAL, PARAMETER :: LWD_OPT = 20.0
+          REAL, PARAMETER :: LWD_SIG = 9.0
+          
+          REAL, PARAMETER :: T_OPT   = 23.0
+          REAL, PARAMETER :: T_SIG   = 5.0
+          
           DVIP = 0
-          IF (T .LT. 15.0) THEN  
-            IF (LWD .GT. 14.1) THEN        
-              DVIP = 2
-            ELSEIF (LWD .GE. 11.1 .AND. LWD .LE. 14.0) THEN 
-              DVIP = 1
-            ELSE
-              DVIP = 0
-            ENDIF
-          ELSEIF (T .GE. 15.0 .AND. T .LT. 20.0) THEN 
-            IF (LWD .GT. 17.1) THEN     
-              DVIP = 3
-            ELSEIF (LWD .GE. 13.1 .AND. LWD .LE. 17.0) THEN
-              DVIP = 2
-            ELSEIF (LWD .GE. 7.1  .AND. LWD .LE. 13.0) THEN 
-              DVIP = 1
-            ELSE
-              DVIP = 0
-            ENDIF
-          ELSEIF (T .GE. 20.0 .AND. T .LT. 25.0) THEN 
-            IF (LWD .GT. 17.1) THEN        
-              DVIP = 3
-            ELSEIF (LWD .GE. 10.1 .AND. LWD .LE. 17.0) THEN 
-              DVIP = 2
-            ELSEIF (LWD .GE. 7.1  .AND. LWD .LE. 10.0) THEN  
-              DVIP = 1
-            ELSE
-              DVIP = 0
-            ENDIF
+          NLes = 0.0
+          
+          IF (LWD .LE. 1.0) RETURN
+
+          ! --- Gaussian Model Calculation ---
+          TERM_LWD  = ((LWD - LWD_OPT) / LWD_SIG)**2.0
+          TERM_TEMP = ((T   - T_OPT)   / T_SIG)**2.0
+          
+          EXP_VAL = -2.5 * (TERM_LWD + TERM_TEMP)
+          
+          IF (EXP_VAL .LT. -20.0) THEN
+             NLes = 0.0
           ELSE
-            IF (LWD .GT. 17.1) THEN        
-              DVIP = 3
-            ELSEIF (LWD .GE. 11.1 .AND. LWD .LE. 17.0) THEN 
-              DVIP = 2
-            ELSEIF (LWD .GE. 7.1  .AND. LWD .LE. 11.0) THEN  
-              DVIP = 1
-            ELSE
-              DVIP = 0
-            ENDIF
-          ENDIF 
+             NLes = A_COEFF * EXP(EXP_VAL)
+          END IF
+
+          ! --- Classification ---
+          IF (NLes .LE. 0.5) THEN
+             DVIP = 0
+          ELSEIF (NLes .LE. 3.0) THEN
+             DVIP = 1
+          ELSEIF (NLes .LE. 6.0) THEN
+             DVIP = 2
+          ELSE
+             DVIP = 3
+          END IF
+
       END SUBROUTINE CALC_DVIP
 
 ! ------ FUNGICIDE DECISION/APPLICATIONS
@@ -728,24 +731,29 @@ C--------- Population (individuals) & potential rate per area -----------
           REAL HEALTH_LAI
           LOGICAL CAN_SPRAY
           
+          ! 1. Update Rolling Sum
           SUM7 = SUM7 - DVIP_pts(idx) + DVIP_today
           DVIP_pts(idx) = DVIP_today
           idx = MOD(idx,7) + 1
           
+          ! 2. Decrement Buffer
           IF (BufferDays .GT. 0) BufferDays = BufferDays - 1
           
+          ! 3. Decrement Residual (Protection)
           IF (FungActive) THEN
               ResidualDays = ResidualDays - 1
               IF (ResidualDays .LE. 0) THEN 
                   FungActive = .FALSE.
-                  SUM7 = 0 
+                  ! SUM7 = 0  
               END IF
           END IF
           
-          CAN_SPRAY = (HEALTH_LAI .GE. 1.5)
+          ! 4. Spray Decision
+          CAN_SPRAY = (HEALTH_LAI .GE. 0.1)
           
           IF (SUM7 .GE. 6 .AND. BufferDays .EQ. 0 .AND. CAN_SPRAY) THEN
               NSprays = NSprays + 1
+              
               BufferDays = 16
               
               IF (USE_FUNGICIDE) THEN
