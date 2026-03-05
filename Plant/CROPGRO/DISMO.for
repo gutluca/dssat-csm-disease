@@ -12,6 +12,7 @@ C  08/10/2025 Logic/robustness fixes (cohorts, IR, LAF, LWD, cum. LAI)
 C  11/05/2025 Write func for "DISEASE_DEVELOPMENT.OUT"
 C  11/17/2025 Virtual lesions factor added.
 C  12/09/2025 Severity calculation in output file
+C  05/03/2026 Removed hardcoded paths and added logic to find parameter file in DSSAT folders.
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
@@ -24,7 +25,8 @@ C-----------------------------------------------------------------------
           EXTERNAL F_RH, F_LWD, T_DEV, F_IR, F_DS, F_CANSPO, F_DEW,
      &             F_TAVG, F_LR, F_LS, F_PS, F_LAF, F_LAR, F_PPSR,
      &             F_PPSR_POP, APPLY_FUNGICIDE, CALC_DVIP,
-     &             READ_DISEASE_PARAMETERS, F_VIRTUAL_LESIONS,F_SEVERITY
+     &             READ_DISEASE_PARAMETERS, F_VIRTUAL_LESIONS,
+     &             F_SEVERITY, GETLUN, PATH
           SAVE
 C-----------------------------------------------------------------------
 C  Switches / constants
@@ -86,6 +88,7 @@ C--------- Population (individuals) & potential rate per area -----------
           REAL FUNG_EFFICIENCY
           REAL, SAVE :: LAI_PEAK_SEASON
           REAL, SAVE :: SEVERITY_PCT
+          INTEGER, SAVE :: LUN_OUT
           
 !-----------------------------------------------------------------------
 !         Constructed types
@@ -128,9 +131,11 @@ C--------- Population (individuals) & potential rate per area -----------
           VIRTUAL_PHOTO_FACTOR = 1.0
           
           IF (CONTROL%RUN .EQ. 1) THEN
-          OPEN(2333, FILE='C:\DSSAT48\Soybean\DISEASE_DEVELOPMENT.OUT',
-     &        STATUS='replace')
-          WRITE(2333, 24)
+              CALL GETLUN('DISOUT',LUN_OUT)
+              
+          OPEN(LUN_OUT, FILE='DISEASE_DEVELOPMENT.OUT',STATUS='replace')
+          
+          WRITE(LUN_OUT, 24)
    24     FORMAT('   FILEX     RUN   YYDOY     DAS  LAI_HEALTH',
      &     '  LA_DISEASE   LA_INFECT    NEW_LOSS         LWD',
      &     '          RH    FAT_TEMP   LAI_TOTAL        SUM7',
@@ -157,10 +162,10 @@ C--------- Population (individuals) & potential rate per area -----------
                ADMITTED_AREA= 0.0
                SPORES_YEST  = 0.0
                
-               CALL READ_DISEASE_PARAMETERS(NDS, LESION_S, KVERHULST,
-     &            YMAX, COF_A, COF_B, RVERHULST, TMIN_G, TOT_G, TMAX_G,
-     &            TMIN_D, TOT_D, TMAX_D, LDmin, LESIONAGEOPT,LESLIFEMAX,
-     &            DAE_START, beta)
+               CALL READ_DISEASE_PARAMETERS(CONTROL,NDS, LESION_S, 
+     &              KVERHULST,YMAX, COF_A, COF_B, RVERHULST, TMIN_G,
+     &              TOT_G,TMAX_G,TMIN_D, TOT_D, TMAX_D, LDmin,
+     &              LESIONAGEOPT,LESLIFEMAX,DAE_START, beta)
           END IF
               
 !----- Disease activation (starts after DAE_START) ----------------------
@@ -376,7 +381,7 @@ C--------- Population (individuals) & potential rate per area -----------
           
       ELSEIF (DYNAMIC .EQ. OUTPUT) THEN
 
-            WRITE(2333, '(A8, 3I8, 9F12.3, I8, L9, F10.2)') 
+            WRITE(LUN_OUT, '(A8, 3I8, 9F12.3, I8, L9, F10.2)') 
      &  CONTROL%FILEX(:8), 
      &  CONTROL%RUN, YRDOY,     
      &  CONTROL%DAS, HEALTH_LAI, DISEASE_LAI/10000.0, IS,NEW_LOSS_TODAY,
@@ -406,6 +411,7 @@ C--------- Population (individuals) & potential rate per area -----------
             NSprays = 0
             LAI_PEAK_SEASON = 0.0
             SEVERITY_PCT    = 0.0
+            CLOSE(LUN_OUT)
             	 
       ENDIF
 
@@ -418,14 +424,18 @@ C--------- Population (individuals) & potential rate per area -----------
 ! ------ READ PARAMETERS
 !  keep parameter file consistent with columns order below.
      
-      SUBROUTINE READ_DISEASE_PARAMETERS(NDS, LESION_S, KVERHULST,
+      SUBROUTINE READ_DISEASE_PARAMETERS(CONTROL,NDS,LESION_S,KVERHULST,
      &                                  YMAX, COF_A, COF_B, 
      &                                  RVERHULST, TMIN_G, TOT_G,TMAX_G,
      &                                  TMIN_D, TOT_D, TMAX_D,    
      &                                  LDmin, LESIONAGEOPT, LESLIFEMAX,
      &                                  DAE_START, beta)
 
+          USE ModuleDefs
           IMPLICIT NONE
+          EXTERNAL PATH, GETLUN
+          
+          TYPE (ControlType) CONTROL
           
           REAL    NDS, LESION_S, KVERHULST, RVERHULST
           REAL    YMAX, COF_A, COF_B
@@ -434,32 +444,46 @@ C--------- Population (individuals) & potential rate per area -----------
           REAL    LDmin, LESIONAGEOPT, LESLIFEMAX, beta
           INTEGER DAE_START
 
-          CHARACTER(LEN=6)  ID       
-          CHARACTER(LEN=20) VRNAME   
-          INTEGER UNIT, IOS
+          CHARACTER(LEN=6)   ID        
+          CHARACTER(LEN=20)  VRNAME    
+          CHARACTER(LEN=120) DISFIL
+          CHARACTER(LEN=80)  PATHPE
+          CHARACTER(LEN=12)  NAMEF
+          INTEGER LUN_DIS, IOS
+          LOGICAL FEXIST
 
-          UNIT = 10
+          INQUIRE(FILE='disease_parameters.txt', EXIST=FEXIST)
+          
+          IF (FEXIST) THEN
+              DISFIL = 'disease_parameters.txt'
+          ELSE
+              CALL PATH('PSD', CONTROL % DSSATP, PATHPE, 1, NAMEF)
+              DISFIL = TRIM(PATHPE) // 'disease_parameters.txt'
+          END IF
 
-          OPEN(UNIT, FILE='C:\DSSAT48\Soybean\disease_parameters.txt', 
-     &        STATUS='OLD', ACTION='READ', IOSTAT=IOS)
+          CALL GETLUN('DISINP', LUN_DIS)
+          
+          OPEN(LUN_DIS, FILE=TRIM(DISFIL), 
+     &         STATUS='OLD', ACTION='READ', IOSTAT=IOS)
 
-          READ(UNIT, *)
-          READ(UNIT, *)
-          READ(UNIT, *)
-          READ(UNIT, *)
-          READ(UNIT, *)
+          IF (IOS /= 0) RETURN
 
-          READ(UNIT,*) ID, VRNAME, 
-     &             NDS, LESION_S, KVERHULST, RVERHULST, 
-     &             YMAX, COF_A, COF_B,                  
-     &             TMIN_G, TOT_G, TMAX_G,               
-     &             TMIN_D, TOT_D, TMAX_D,               
-     &             LDmin, LESIONAGEOPT, LESLIFEMAX,
-     &             DAE_START, beta
+          READ(LUN_DIS, *)
+          READ(LUN_DIS, *)
+          READ(LUN_DIS, *)
+          READ(LUN_DIS, *)
+          READ(LUN_DIS, *)
 
-          CLOSE(UNIT)
+          READ(LUN_DIS,*) ID, VRNAME, 
+     &                 NDS, LESION_S, KVERHULST, RVERHULST, 
+     &                 YMAX, COF_A, COF_B,                  
+     &                 TMIN_G, TOT_G, TMAX_G,               
+     &                 TMIN_D, TOT_D, TMAX_D,               
+     &                 LDmin, LESIONAGEOPT, LESLIFEMAX,
+     &                 DAE_START, beta
 
-          RETURN
+          CLOSE(LUN_DIS)
+
       END SUBROUTINE READ_DISEASE_PARAMETERS
 
 ! ------ AVERAGE TEMPERATURE
