@@ -13,6 +13,7 @@ C  11/05/2025 Write func for "DISEASE_DEVELOPMENT.OUT" improved
 C  11/17/2025 Virtual lesions factor added.
 C  12/09/2025 Severity calculation in output file
 C  03/05/2026 Removed hardcoded paths and added logic to find parameter file in DSSAT folders.
+C  03/10/2026 Moved DISMO.for from Plant\CROPGRO to Plant\Generic-Pest
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
@@ -96,7 +97,7 @@ C--------- Population (individuals) & potential rate per area -----------
           TYPE (ControlType) CONTROL
           TYPE (SwitchType)  ISWITCH
           
-          DYNAMIC = CONTROL % DYNAMIC
+          !DYNAMIC = CONTROL % DYNAMIC
           DAS     = CONTROL % DAS
 
 !***********************************************************************
@@ -141,7 +142,7 @@ C--------- Population (individuals) & potential rate per area -----------
      &     '          RH    FAT_TEMP   LAI_TOTAL        SUM7',
      &     ' NSPRAYS FUNG_ACT Severity%')
 
-          ENDIF
+          ENDIF  
 !***********************************************************************
 !  RATE — called every day
 !***********************************************************************

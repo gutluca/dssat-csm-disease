@@ -58,8 +58,9 @@ C=======================================================================
       EXTERNAL DEMAND, FREEZE, GROW, HRES_CGRO, INCOMP, IPPLNT, MOBIL,
      &  NFIX, NUPTAK, OPGROW, OPHARV, P_CGRO, PEST, PHENOL,
      &  PHOTO, PLANTNBAL, PODDET, PODS, RESPIR, ROOTS, SENES,
-     &  VEGGR, DISEASE_LEAF
+     &  VEGGR
       SAVE
+      ! removed DISEASE_LEAF from EXTERNAL
 !-----------------------------------------------------------------------
       CHARACTER*1 DETACH, IDETO, ISWNIT, ISWSYM,
      &    ISWWAT, ISWDIS, ISWPHO, MEPHO, RNMODE
@@ -179,11 +180,11 @@ C=======================================================================
       REAL KSTRES
       
 !     Disease
-      REAL, DIMENSION(200,5) :: ESP_LAT_HIST
-      REAL, DIMENSION(200) :: SUP_INF_LIST
-      REAL, DIMENSION(200) :: LAI_INF_LIST
+      !REAL, DIMENSION(200,5) :: ESP_LAT_HIST
+      !REAL, DIMENSION(200) :: SUP_INF_LIST
+      !REAL, DIMENSION(200) :: LAI_INF_LIST
 
-      REAL HEALTH_LAI, DISEASE_LAI, VIRTUAL_PHOTO_FACTOR
+      !REAL HEALTH_LAI, DISEASE_LAI, VIRTUAL_PHOTO_FACTOR
 
 !-----------------------------------------------------------------------
 !     Define constructed variable types based on definitions in
@@ -277,15 +278,15 @@ C=======================================================================
       
       !-----------------------------------------------------------------------
 ! - Disease
-      CALL DISEASE_LEAF(DYNAMIC,
-     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,        !Input
-     &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,       !Input
-     &    YRDOY, YREMRG, NVEG0, YREND,                    !Input
-     &    DISLA,VIRTUAL_PHOTO_FACTOR)                     !Output
+      !CALL DISEASE_LEAF(DYNAMIC,
+      !&    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,        !Input
+      !&    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,       !Input
+      !&    YRDOY, YREMRG, NVEG0, YREND,                    !Input
+      !&    DISLA,VIRTUAL_PHOTO_FACTOR)                     !Output
 
 
 !-----------------------------------------------------------------------
-      IF (ISWDIS .EQ. 'Y') THEN
+      IF (ISWDIS .EQ. 'Y'.OR. ISWDIS .EQ. 'D') THEN
         CALL PEST(CONTROL, ISWITCH, 
      &    AREALF, CLW, CSW, LAGSD, LNGPEG, NR2, PGAVL,    !Input
      &    PHTIM, PLTPOP, RTWT, SLA, SLDOT, SOILPROP,      !Input
@@ -734,14 +735,14 @@ C-----------------------------------------------------------------------
       
 !----------------------------------------------------------------------   
       ! Disease
-      CALL DISEASE_LEAF(DYNAMIC,
-     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,       !Input
-     &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
-     &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-     &    DISLA,VIRTUAL_PHOTO_FACTOR)                    !Output
+      !CALL DISEASE_LEAF(DYNAMIC,
+      !&    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,       !Input
+      !&    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
+      !&    YRDOY, YREMRG, NVEG0, YREND,                   !Input
+      !&    DISLA,VIRTUAL_PHOTO_FACTOR)                    !Output
 
 !----------------------------------------------------------------------
-      IF (ISWDIS .EQ. 'Y') THEN
+      IF (ISWDIS .EQ. 'Y'.OR. ISWDIS .EQ. 'D') THEN
         CALL PEST(CONTROL, ISWITCH, 
      &    AREALF, CLW, CSW, LAGSD, LNGPEG, NR2, PGAVL,    !Input
      &    PHTIM, PLTPOP, RTWT, SLA, SLDOT, SOILPROP,      !Input
@@ -891,11 +892,11 @@ C-----------------------------------------------------------------------
      &      PStres1, PStres2, PUptake, FracRts)             !Output
         ENDIF
       
-      CALL DISEASE_LEAF(DYNAMIC,
-     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,       !Input
-     &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
-     &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-     &    DISLA,VIRTUAL_PHOTO_FACTOR)                    !Output
+      !CALL DISEASE_LEAF(DYNAMIC,
+      !&    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,       !Input
+      !&    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
+      !&    YRDOY, YREMRG, NVEG0, YREND,                   !Input
+      !&    DISLA,VIRTUAL_PHOTO_FACTOR)                    !Output
 
 !-----------------------------------------------------------------------
       ENDIF
@@ -947,14 +948,14 @@ C-----------------------------------------------------------------------
 !-----------------------------------------------------------------------
 !     Reduce PGAVL by disease physiological stress (virtual lesions)
 !-----------------------------------------------------------------------
-      PGAVL = PGAVL * VIRTUAL_PHOTO_FACTOR !Dismo
+      !PGAVL = PGAVL * VIRTUAL_PHOTO_FACTOR !Dismo
 !-----------------------------------------------------------------------
 !     Reduce PGAVL if pest damage occurs to C assimilation
 !     Moved to PEST module - chp
 !-----------------------------------------------------------------------
 !     Call PEST Module for INTEGRATION calculations
 !-----------------------------------------------------------------------
-      IF (ISWDIS.EQ.'Y') THEN
+      IF (ISWDIS.EQ.'Y'.OR. ISWDIS .EQ. 'D') THEN
         CALL PEST(CONTROL, ISWITCH, 
      &    AREALF, CLW, CSW, LAGSD, LNGPEG, NR2, PGAVL,    !Input
      &    PHTIM, PLTPOP, RTWT, SLA, SLDOT, SOILPROP,      !Input
@@ -1316,7 +1317,7 @@ C-----------------------------------------------------------------------
           STGDOY(16) = YREND
         ENDIF
 
-        IF (ISWDIS.EQ.'Y') THEN
+        IF (ISWDIS.EQ.'Y'.OR. ISWDIS .EQ. 'D') THEN
           CALL PEST(CONTROL, ISWITCH, 
      &      AREALF, CLW, CSW, LAGSD, LNGPEG, NR2, PGAVL,    !Input
      &      PHTIM, PLTPOP, RTWT, SLA, SLDOT, SOILPROP,      !Input
@@ -1327,11 +1328,11 @@ C-----------------------------------------------------------------------
      &      SDDES, WLIDOT, WRIDOT, WSIDOT,SDWT)             !Output
         ENDIF
         
-        CALL DISEASE_LEAF(DYNAMIC,
-     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,            !Input
-     &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
-     &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-     &    DISLA,VIRTUAL_PHOTO_FACTOR)                      !Output
+        !CALL DISEASE_LEAF(DYNAMIC,
+      !&    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,            !Input
+      !&    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
+      !&    YRDOY, YREMRG, NVEG0, YREND,                   !Input
+      !&    DISLA,VIRTUAL_PHOTO_FACTOR)                      !Output
 
         CALL PODS(DYNAMIC, 
      &    AGRSD1, AGRSH1, DLAYR, DRPP, DUL, FILECC,       !Input
@@ -1406,11 +1407,11 @@ C-----------------------------------------------------------------------
         SENESCE % ResE   = 0.0
         
 ! Disease 
-        CALL DISEASE_LEAF(DYNAMIC,
-     &    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,            !Input
-     &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
-     &    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-     &    DISLA, VIRTUAL_PHOTO_FACTOR)                    !Output
+        !CALL DISEASE_LEAF(DYNAMIC,
+      !&    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,            !Input
+      !&    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
+      !&    YRDOY, YREMRG, NVEG0, YREND,                   !Input
+      !&    DISLA, VIRTUAL_PHOTO_FACTOR)                    !Output
       ENDIF
 
 !***********************************************************************
@@ -1428,6 +1429,10 @@ C-----------------------------------------------------------------------
       Call PUT('PLANT', 'RNITP',  RNITP) 
       Call PUT('PLANT', 'SLAAD',  SLAAD) 
       Call PUT('PLANT', 'XPOD',   XPOD)
+      Call PUT('PLANT', 'XLAID',  XLAI) !dismo
+      Call PUT('PLANT', 'NVEG0D', NVEG0) !dismo
+      Call PUT('PLANT', 'YREMGD', YREMRG) !dismo
+      Call PUT('PLANT', 'YRENDD', YREND) !dismo
 
       RETURN
       END SUBROUTINE CROPGRO

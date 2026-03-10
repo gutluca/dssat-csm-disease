@@ -443,7 +443,12 @@ C             CHP Added TRTNUM to CONTROL variable.
         REAL CANHT, CANWH, DXR57, EXCESS,
      &    PLTPOP, RNITP, SLAAD, XPOD
         REAL BIOMAS
+        REAL VPHOTF             !Virtual photo factor from DISMO (0-1)
+        REAL XLAI_D             !LAI for DISMO
         INTEGER NR5, iSTAGE, iSTGDOY
+        INTEGER NVEG0_D         !NVEG0 for DISMO
+        INTEGER YREMRG_D        !YREMRG for DISMO
+        INTEGER YREND_D         !YREND for DISMO
         CHARACTER*10 iSTNAME
       END TYPE PlantType
 
@@ -707,6 +712,8 @@ C             CHP Added TRTNUM to CONTROL variable.
         Case ('RNITP') ; Value = SAVE_data % PLANT % RNITP
         Case ('SLAAD') ; Value = SAVE_data % PLANT % SLAAD
         Case ('XPOD')  ; Value = SAVE_data % PLANT % XPOD
+        Case ('VPHOTF'); Value = SAVE_data % PLANT % VPHOTF ! DISMO virtual photo factor
+        Case ('XLAID');  Value = SAVE_data % PLANT % XLAI_D ! DISMO LAI
         Case DEFAULT; ERR = .TRUE.
         END SELECT
 
@@ -850,6 +857,8 @@ C             CHP Added TRTNUM to CONTROL variable.
         Case ('RNITP');  SAVE_data % PLANT % RNITP  = Value
         Case ('SLAAD');  SAVE_data % PLANT % SLAAD  = Value
         Case ('XPOD');   SAVE_data % PLANT % XPOD   = Value
+        Case ('VPHOTF'); SAVE_data % PLANT % VPHOTF = Value !dismo
+        Case ('XLAID');  SAVE_data % PLANT % XLAI_D = Value !dismo
         Case DEFAULT; ERR = .TRUE.
         END SELECT
 
@@ -1013,6 +1022,9 @@ C             CHP Added TRTNUM to CONTROL variable.
         Case ('NR5');  Value = SAVE_data % PLANT % NR5
         Case ('iSTAGE');  Value = SAVE_data % PLANT % iSTAGE
         Case ('iSTGDOY'); Value = SAVE_data % PLANT % iSTGDOY
+        Case ('NVEG0D'); Value = SAVE_data % PLANT % NVEG0_D !dismo
+        Case ('YREMGD'); Value = SAVE_data % PLANT % YREMRG_D !dismo
+        Case ('YRENDD'); Value = SAVE_data % PLANT % YREND_D !dismo
         Case DEFAULT; ERR = .TRUE.
         END SELECT
 
@@ -1060,6 +1072,9 @@ C             CHP Added TRTNUM to CONTROL variable.
         Case ('NR5');  SAVE_data % PLANT % NR5  = Value
         Case ('iSTAGE');  SAVE_data % PLANT % iSTAGE  = Value
         Case ('iSTGDOY'); SAVE_data % PLANT % iSTGDOY = Value
+        Case ('NVEG0D'); SAVE_data % PLANT % NVEG0_D = Value !dismo
+        Case ('YREMGD'); SAVE_data % PLANT % YREMRG_D = Value !dismo
+        Case ('YRENDD'); SAVE_data % PLANT % YREND_D = Value !dismo
         Case DEFAULT; ERR = .TRUE.
         END SELECT
 
