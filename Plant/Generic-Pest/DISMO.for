@@ -9,10 +9,10 @@ C  07/17/2023 Written.
 C  11/15/2024 Revised.
 C  05/20/2025 Fungicide logic. 
 C  08/10/2025 Logic/robustness fixes (cohorts, IR, LAF, LWD, cum. LAI)
-C  11/05/2025 Write func for "DISEASE_DEVELOPMENT.OUT"
+C  11/05/2025 Write func for "DISEASE_DEVELOPMENT.OUT" improved
 C  11/17/2025 Virtual lesions factor added.
 C  12/09/2025 Severity calculation in output file
-C  05/03/2026 Removed hardcoded paths and added logic to find parameter file in DSSAT folders.
+C  03/05/2026 Removed hardcoded paths and added logic to find parameter file in DSSAT folders.
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
@@ -968,8 +968,7 @@ C--------- Population (individuals) & potential rate per area -----------
 ! F_VIRTUAL_LESIONS: Simulates the green leaf area around the necrotic area that does less photosynthesis due to the disease stress)
 
 ! --------------------------- Files/IO ---------------------------------
-! Unit 23      : Writes daily diagnostics to
-!                C:\DSSAT48\Soybean\DISEASE_DEVELOPMENT.OUT
+! ! Unit LUN_OUT : Writes daily diagnostics to Current Working Directory
 ! Output cols  : RUN, YYDOY, DAS, LAI_HEALTH, LA_DISEASE, LAI_INFECT,
 !                NEW_LOSS, LWD, RH, FAT_TEMP(=FT), LAI_TOTAL, SUM7, 
 !                NSPRAYS, FUNG_ACT (logical), Severity%
