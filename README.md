@@ -2,68 +2,164 @@
 
 **Authors**: Gustavo de A. Luca, Izael M. Fattori Jr., Fábio R. Marin
 
-**Affiliation**: University of São Paulo – ESALQ/USP  
+**Affiliation**: University of São Paulo – ESALQ/USP
 
 ---
 
 ## Abstract
 
-This repository contains a modified version of the [DSSAT](https://dssat.net/) (Decision Support System for Agrotechnology Transfer) source code, integrating a generic epidemiological model for foliar diseases into the CROPGRO-Soybean module.
+This repository contains a modified version of the [DSSAT](https://dssat.net/) (Decision Support System for Agrotechnology Transfer) source code, integrating a generic epidemiological model for foliar fungal diseases into the CROPGRO template plant growth module.
 
-The new generic disease module, `DISMO`, simulates the impact of leaf diseases, such as Asian Soybean Rust (*Phakopsora pachyrhizi*), on soybean development and yield. It calculates daily diseased leaf area based on environmental variables and pathogen dynamics, dynamically adjusting photosynthesis and leaf senescence within CROPGRO.
+The new module, **DISMO** - Disease Impact and Severity Module (`DISEASE_LEAF` subroutine), simulates the progression of leaf diseases such as Asian Soybean Rust (*Phakopsora pachyrhizi*) using a daily cohort-based state-transition model. It calculates diseased leaf area from environmental drivers and pathogen dynamics, and reduces canopy photosynthesis through a **virtual lesion factor** (`VPHOTF`) coupled to CROPGRO's carbon assimilation framework via the existing Generic-Pest (`PEST`) module.
 
----
+The module is activated by a single switch in the DSSAT experiment file: **`ISWDIS = 'D'`**.
 
-## Methodology
-
-### 1. The Epidemiological Model (`DISEASE_LEAF`)
-
-A daily time-step state-transition model simulating pathogen dynamics:
-
-- **Environmental Inputs**: T_min, T_max, and Relative Humidity (RH) from DSSAT weather files.
-- **Key Processes**:
-  - **Spore Deposition (F_DS)**
-  - **Infection Rate (F_IR)** — via a beta response curve based on T and Leaf Wetness Duration (LWD)
-  - **Latent Period (F_LR, F_LS)** — temperature-driven
-  - **Spore Production (F_PS, F_PPSR)** — using a Verhulst logistic model and lesion aging (F_LAF)
-
-#### Output:
-- `DISEASE_LAI`: Daily diseased leaf area (fraction of total LAI)
+> **Architecture note (March 2026):** `DISMO.for` was moved from `Plant\CROPGRO` to `Plant\Generic-Pest` and is now invoked exclusively through the **Generic-Pest (`PEST`) module**. No direct calls to `DISEASE_LEAF` remain in `CROPGRO.for`.
 
 ---
 
-### 2. Fungicide Control Module
+## Scientific Background
 
-Includes a rule-based system to simulate fungicide applications.
+### 1. The Epidemiological Model (`DISEASE_LEAF` — `DISMO.for`)
 
-- **DVIP Calculation**: Daily value of infection probability (0–3), based on favorability matrices.
-- **Application Rule**: Triggered if `SUM7(DVIP) ≥ 6` and `HEALTH_LAI ≥ 1.5`
-- **Fungicide Effect**: Reduces infection rate based on:
-  - `FUNG_EFFICIENCY`
-  - `ResidualDays` (residual protection period)
+The model follows a **cohort-based polycyclic approach**. Each day a new cohort of latent spores is deposited on the canopy; cohorts progress through latency, become infectious, sporulate, and die according to temperature-driven rates. Secondary inoculum produced by infectious cohorts creates new latent cohorts, resulting in the exponential epidemic growth typical of rust pathogens.
+
+#### Disease Cycle — Processes and Functions
+
+| Step | Function | Formula / Logic |
+|---|---|---|
+| Canopy spore capacity | `F_CANSPO` | `FSS = min(LAI / (NDS × LESION_S), 1)` |
+| Spore deposition | `F_DS` | `DS = FSS × NDS` |
+| Infection rate | `F_IR` | `IR = Ymax × FT × (1 − exp(−(A × LWD)^B))` |
+| Latent spores per cohort | `F_LS` | `LS = IR × DS` |
+| Latency progress rate | `F_LR` | `LR = FT_D / LDmin` |
+| Latent → infectious | cohort loop | when cumulative `LR >= 1`, cohort becomes infectious |
+| Lesion aging rate | `F_LAR` | `Lesion_Rate = FT_D / LESLIFEMAX` |
+| Sporulation shape | `F_LAF` | Triangular: rises to 1 at `LESIONAGEOPT`, falls to 0 at age = 1 |
+| Secondary inoculum | `F_PPSR_POP` | Verhulst logistic in population space; spores per unit infectious area |
+| Virtual lesion factor | `F_VIRTUAL_LESIONS` | `fvl = (1 − s)^β`, where `s = NEW_LOSS_TODAY / HEALTH_LAI` |
+
+#### Temperature Response
+
+Two independent **beta-shaped** responses are computed from daily mean temperature `T = (Tmax + Tmin) / 2`:
+
+- **`FT_G`** — spore germination, parameterised by `TMIN_G`, `TOT_G`, `TMAX_G`
+- **`FT_D`** — general fungal development (latency, aging, sporulation), parameterised by `TMIN_D`, `TOT_D`, `TMAX_D`
+- **`FT = FT_G × FT_D`** — combined response used for the infection rate
+
+#### Leaf Wetness Duration
+
+`LWD` (hours, 0–24) is derived from relative humidity via a logistic function:
+
+```
+LWD = 31.31 / (1 + exp(-((RH − 85.17) / 9.13)))
+```
+
+When `USE_WTH_RH = .TRUE.` (default), `RH` comes directly from the DSSAT weather file. When `.FALSE.`, `RH` is computed internally from an empirical dew-point formula using `Tmin` and `Tmax`.
+
+#### Healthy LAI Tracking
+
+At each `RATE` call, healthy LAI is computed as:
+
+```
+HEALTH_LAI = max(LAI_TOTAL − LAI_INF_LIST(DAE−1), 0)
+```
+
+where `LAI_INF_LIST` is the cumulative removed LAI array updated daily. New infectious cohorts can only occupy remaining healthy area (`HEALTH_LAI_AVAIL`), preventing the model from exceeding the physical leaf area.
+
+#### Virtual Lesion Effect on Photosynthesis
+
+The virtual lesion concept (Primiano & Amorim, 2020) accounts for the physiological impairment of still-green tissue surrounding necrotic lesions:
+
+1. `s = NEW_LOSS_TODAY / HEALTH_LAI` — daily fraction of newly necrosed leaf area
+2. `fvl = (1 − s)^β` — `β` is read from the parameter file; higher values = stronger reduction
+3. `VPHOTF_DISMO = fvl` is stored via `PUT('PLANT','VPHOTF',...)` and applied to `PGAVL` inside `ASMDM` in `PEST.for`
 
 ---
 
-### 3. Coupling with CROPGRO-Soybean
+### 2. Fungicide Decision Module
 
-**Integration Points** in `CROPGRO.for`:
+An optional rule-based fungicide model, toggled by `USE_FUNGICIDE` in `DISMO.for` (default `.FALSE.`):
 
-- **Declaration**: `DISEASE_LEAF` as `EXTERNAL`
-- **Daily Call**: Inserted under `DYNAMIC .EQ. RATE`
-- **Data Exchange**:
-  - *To* DISEASE_LEAF: `TMIN`, `TMAX`, `RHUM`, `XLAI`
-  - *From* DISEASE_LEAF: `DISLA` → used by the `PEST` subroutine
+| Component | Value | Description |
+|---|---|---|
+| Risk index (DVIP) | 0–3 per day | Gaussian function of `LWD` and `T` (Beruski et al., 2020) |
+| Spray trigger | `SUM7 >= 6` AND `HEALTH_LAI >= 0.1` | 7-day rolling DVIP sum exceeds threshold with sufficient canopy |
+| Buffer period | 16 days | Minimum interval between consecutive sprays |
+| Residual protection | 14 days | Efficacy window after each application |
+| Efficacy | `FUNG_EFFICIENCY = 0.723` | Proportional reduction in `IR` during residual period |
+
+When `USE_FUNGICIDE = .FALSE.`, spray decisions are still tracked (for diagnostics in the output file), but the infection rate is not reduced.
+
+---
+
+### 3. Integration Architecture
+
+#### Previous architecture (before March 2026)
+
+`DISEASE_LEAF` was called **directly inside `CROPGRO.for`** at every simulation phase (`RUNINIT`, `RATE`, `INTEGR`, `OUTPUT`, `SEASEND`). State arrays (`ESP_LAT_HIST`, `SUP_INF_LIST`, `LAI_INF_LIST`) and weather variables were declared locally in `CROPGRO.for`. The `VIRTUAL_PHOTO_FACTOR` was also applied there directly as `PGAVL = PGAVL * VIRTUAL_PHOTO_FACTOR`.
+
+#### Current architecture
+
+`DISEASE_LEAF` is called **exclusively inside `PEST.for`**. `CROPGRO.for` calls `PEST` unchanged — only minimal additions were made to CROPGRO (`PUT` calls for `XLAID`, `NVEG0D`, `YREMGD`, `YRENDD`, and the `ISWDIS='D'` condition in the `PEST` call guard).
+
+```
+CROPGRO.for
+  └── CALL PEST(...)                           ← ISWDIS = 'Y' or 'D'
+        └── PEST.for
+              ├── [RUNINIT]   IF RUN_DISMO → CALL DISEASE_LEAF(RUNINIT)
+              ├── [SEASINIT]  IF ISWDIS='Y' → CALL IPPROG (classic time-series)
+              │               CALL PESTCP / ASMDM / SEEDDM / VEGDM / ROOTDM / OPPEST
+              │               IF RUN_DISMO → CALL DISEASE_LEAF(SEASINIT)
+              │               PUT('PLANT','VPHOTF', VPHOTF_DISMO)
+              ├── [RATE]      IF RUN_DISMO → GET weather & LAI via GET/PUT
+              │                           → CALL DISEASE_LEAF(RATE)
+              │                           → DISLA += DISEASE_LAI_DISMO
+              │                           → PUT('PLANT','VPHOTF', VPHOTF_DISMO)
+              │               IF PCN > 0  → classic LINDM/PESTCP/SEEDDM/VEGDM/ROOTDM
+              ├── [INTEGR]    CALL ASMDM(PGAVL, PPSR, TPSR, VPHOTF_DISMO → ASMDOT)
+              │               IF PCN > 0  → SEEDDM / VEGDM / ROOTDM
+              └── [OUTPUT/SEASEND]  CALL OPPEST
+                              IF RUN_DISMO → CALL DISEASE_LEAF(OUTPUT/SEASEND)
+```
+
+**Key design points:**
+
+- **Classic pest routines** (`PESTCP`, `SEEDDM`, `VEGDM`, `ROOTDM`) run at `RATE` only when `PCN > 0`. With `ISWDIS = 'D'` and no FILET loaded, `PCN = 0` and those routines are skipped.
+- **`ASMDM`** always runs at `INTEGR`, regardless of `ISWDIS`. It now accepts `VPHOTF_DISMO` as a fourth input and applies the virtual lesion reduction to `PGAVL` before subtracting classic pest assimilate damage.
+- **`DISLA`** (cm² m⁻²) is zeroed
+
+#### Data Exchange Between Modules
+
+| Variable | Producer | Consumer | Mechanism | Description |
+|---|---|---|---|---|
+| `TMIN`, `TMAX`, `RHUM` | CROPGRO weather | PEST → DISMO | `GET(WEATHER_PEST)` inside PEST | Daily meteorological inputs |
+| `XLAI` | CROPGRO | PEST → DISMO | `PUT('PLANT','XLAID',XLAI)` at end of CROPGRO | Total canopy LAI |
+| `NVEG0` | CROPGRO/PHENOL | PEST → DISMO | `PUT('PLANT','NVEG0D',NVEG0)` | Emergence DAS gate in DISMO |
+| `YREMRG` | CROPGRO/PHENOL | PEST → DISMO | `PUT('PLANT','YREMGD',YREMRG)` | Emergence date |
+| `YREND` | CROPGRO | PEST → DISMO | `PUT('PLANT','YRENDD',YREND)` | Harvest date; resets `PLANT_LIVE` |
+| `DISEASE_LAI_DISMO` | DISMO | PEST | local variable in PEST | Added to `DISLA`; passed to `VEGDM` and `GROW` |
+| `VPHOTF_DISMO` | DISMO | PEST → ASMDM | `PUT('PLANT','VPHOTF',...)` | Reduces `PGAVL` via `ASMDM` at `INTEGR` |
+| `DISLA` | PEST | CROPGRO | subroutine output argument | Diseased leaf area used by `GROW` |
+| `ASMDOT` | PEST/ASMDM | CROPGRO | subroutine output argument | Assimilate damage subtracted from `PGAVL` |
 
 ---
 
 ## Code Structure
 
-```bash
-dssat-csm-os-develop/
-├── DISMO.for               # New disease module (DISEASE_LEAF)
-├── CROPGRO.for               # Modified to integrate disease model
-├── disease_parameters.txt    # Input file with pathogen-specific parameters
-├── DISEASE_DEVELOPMENT.OUT   # Output file with daily disease progress
+```
+dssat-csm-disease/
+├── Plant/
+│   ├── CROPGRO/
+│   │   └── CROPGRO.for        # Minimal additions only: PUT calls for XLAID/NVEG0D/YREMGD/YRENDD;
+│   │                          #   ISWDIS='D' added to PEST call conditions
+│   └── Generic-Pest/
+│       ├── PEST.for           # Modified: DISMO state arrays, DISEASE_LEAF calls at all phases,
+│       │                      #   VPHOTF_DISMO passed to ASMDM
+│       ├── DISMO.for          # New: DISEASE_LEAF subroutine + all helper functions
+│       └── PESTCP.for         # Unchanged
+├── disease_parameters.txt     # Pathogen-specific parameter input file (user-provided)
+└── DISEASE_DEVELOPMENT.OUT    # Daily disease diagnostic output (written at runtime to CWD)
 ```
 
 ---
@@ -72,35 +168,111 @@ dssat-csm-os-develop/
 
 ### 1. Compilation
 
-- Add `DISMO.for` to your DSSAT-CSM project, inside de CROPGRO paste (C:\DSSAT48\Soybean).
-- Replace original `CROPGRO.for` with the modified one, which contains de CROPGRO code with the coupling points.
-- Recompile DSSAT-CSM
+1. Clone this repository.
+2. In your DSSAT-CSM Visual Studio project, add `DISMO.for` as a source file under the `Plant\Generic-Pest` filter.
+   - Register it in `ALL_BUILD.vcxproj` and `ALL_BUILD.vcxproj.filters` if not already present.
+3. Replace `PEST.for` with the modified version from this repository (in `Plant\Generic-Pest\`).
+4. The modified `CROPGRO.for` is already in place — it requires no additional action beyond a clean rebuild.
+5. Recompile the full DSSAT-CSM solution.
 
-### 2. Input Files
+### 2. Activating DISMO: `ISWDIS = 'D'` in the FILEX
 
-- Add the `disease_parameters.txt` file in `C:\DSSAT48\Soybean\`.
-- Ensure format matches the expectations of `READ_DISEASE_PARAMETERS`.
+The module is activated by the **`DISES`** field in the `*SIMULATION CONTROLS` section of the DSSAT experiment file (`.SBX`, `.MZX`, or equivalent FILEX):
 
-### 3. Output Files
+```
+*SIMULATION CONTROLS
+...
+@N WATER NITRO SYMBI PHOS POTAS DISES TILL  ...
+ 1 Y     Y     Y     N    N     D     N     ...
+```
 
-`DISEASE_DEVELOPMENT.OUT` provides a daily log:
+| `DISES` | Behavior |
+|---|---|
+| `N` | No pest or disease simulation |
+| `Y` | Classic DSSAT pest module — requires a FILET pest time-series file |
+| `D` | **DISMO epidemiological model** — reads `disease_parameters.txt`; no FILET required |
 
-| Column       | Units        | Description                                                       | Notes                                                                     |
-| ------------ | ------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `RUN`        | –            | Simulation run ID                                                 | From `CONTROL%RUN`.                                                       |
-| `YYDOY`      | YYDOY        | Calendar date (year + day-of-year)                                | e.g., `25031` = year **2025**, day **031**.                               |
-| `DAS`        | days         | Days after sowing                                                 | From `CONTROL%DAS`.                                                       |
-| `LAI_HEALTH` | m² m⁻²       | Healthy/susceptible leaf area index at the **start** of the day   | Computed as `LAI_TOTAL − cumulative LAI_DISEASE`, bounded ≥ 0.            |
-| `LA_DISEASE` | m² m⁻²       | **Cumulative** diseased/removed LAI                               | Internally tracked in **cm² m⁻²**; divided by 10 000 for output (m² m⁻²). |
-| `LA_INFECT`  | m² m⁻²       | **Instantaneous** infectious (sporulating) leaf surface **today** | Daily total infectious surface; **not** cumulative.                       |
-| `NEW_LOSS`   | m² m⁻² day⁻¹ | Newly activated diseased area **today**                           | Summing `NEW_LOSS` over days reconstructs `LA_DISEASE`.                   |
-| `LWD`        | hours (0–24) | Leaf wetness duration                                             | Derived from RH via a logistic relation; capped at 24 h.                  |
-| `RH`         | %            | Relative humidity                                                 | From weather if enabled; otherwise computed from dew point.               |
-| `FAT_TEMP`   | 0–1          | Favorable temperature factor (`FT`)                               | Combined germination × development temperature response.                  |
-| `LAI_TOTAL`  | m² m⁻²       | Total canopy LAI                                                  | Provided by the host crop model.                                          |
-| `SUM7`       | 0–21         | 7-day rolling sum of DVIP risk classes                            | Each day contributes 0–3; stored as float in file.                        |
-| `NSPRAYS`    | count        | Number of fungicide applications to date                          | Increments per trigger; can be zero if fungicide is disabled.             |
-| `FUNG_ACT`   | logical      | Residual fungicide protection active (`T`/`F`)                    | When `T`, infection rate is reduced by residual efficacy.                 |
+When `ISWDIS = 'D'`:
+- `CROPGRO.for` calls `PEST` (same entry point as for `'Y'`)
+- Inside `PEST.for`, `RUN_DISMO = .TRUE.` activates `DISEASE_LEAF` at every simulation phase
+- `IPPROG` is **not** called, so `PCN = 0` and classic coupling-point routines (`PESTCP`, `SEEDDM`, `VEGDM`, `ROOTDM`) are skipped at `RATE` and `INTEGR`
+- Weather and LAI data are automatically retrieved inside `PEST` via the DSSAT `GET`/`PUT` exchange mechanism
+
+> `ISWDIS = 'D'` and `'Y'` are mutually exclusive. Do not set both simultaneously.
+
+### 3. Input Files
+
+#### `disease_parameters.txt`
+
+This file contains all pathogen-specific parameters. It is searched in this order:
+
+1. **Current working directory** — the folder from which DSSAT is executed (same location as the `.SBX` experiment file and DSSAT output files)
+2. **DSSAT species data path** — resolved at runtime via `PATH('PSD', CONTROL%DSSATP, ...)`, typically `C:\DSSAT48\Soybean\`
+
+If the file is not found in either location, `READ_DISEASE_PARAMETERS` exits silently and parameters retain their default (zero) values, which will suppress all disease dynamics.
+
+**File format:** 5 header/comment lines followed by exactly **one data line** with the parameters in the order below, space-separated:
+
+| # | Parameter | Type | Units | Description |
+|---|---|---|---|---|
+| 1 | `ID` | CHAR(6) | — | Pathogen identifier code |
+| 2 | `VRNAME` | CHAR(20) | — | Pathogen or variant name |
+| 3 | `NDS` | REAL | spores m⁻² | Primary dispersed spores per infection cycle |
+| 4 | `LESION_S` | REAL | m² | Average area of a single lesion |
+| 5 | `KVERHULST` | REAL | — | Carrying capacity per unit LAI (population space) |
+| 6 | `RVERHULST` | REAL | d⁻¹ | Logistic intrinsic growth rate |
+| 7 | `YMAX` | REAL | 0–1 | Maximum infection rate under optimal conditions |
+| 8 | `COF_A` | REAL | — | Infection response coefficient A (LWD sensitivity) |
+| 9 | `COF_B` | REAL | — | Infection response coefficient B (LWD shape) |
+| 10 | `TMIN_G` | REAL | °C | Minimum temperature for spore germination |
+| 11 | `TOT_G` | REAL | °C | Optimum temperature for spore germination |
+| 12 | `TMAX_G` | REAL | °C | Maximum temperature for spore germination |
+| 13 | `TMIN_D` | REAL | °C | Minimum temperature for fungal development |
+| 14 | `TOT_D` | REAL | °C | Optimum temperature for fungal development |
+| 15 | `TMAX_D` | REAL | °C | Maximum temperature for fungal development |
+| 16 | `LDmin` | REAL | d | Minimum latency period; scales `LR = FT_D / LDmin` |
+| 17 | `LESIONAGEOPT` | REAL | 0–1 | Normalised lesion age at peak sporulation |
+| 18 | `LESLIFEMAX` | REAL | d | Maximum lesion lifespan; scales aging rate |
+| 19 | `DAE_START` | INT | d | Days after emergence when disease becomes active |
+| 20 | `beta` | REAL | — | Virtual lesion exponent β; higher = stronger photosynthesis reduction |
+
+#### Internal Switches in `DISMO.for`
+
+Two compile-time `PARAMETER` constants control optional behaviour:
+
+| Constant | Default | Effect when `.TRUE.` |
+|---|---|---|
+| `USE_FUNGICIDE` | `.FALSE.` | Applies fungicide when `SUM7 >= 6`; reduces `IR` by `FUNG_EFFICIENCY` for 14 days |
+| `USE_WTH_RH` | `.TRUE.` | Uses `RH` from the DSSAT weather file directly; when `.FALSE.` computes `RH` from empirical dew-point |
+
+### 4. Output Files
+
+#### `DISEASE_DEVELOPMENT.OUT`
+
+- **Location:** written to the **current working directory** (same folder as DSSAT output files such as `PLANTGRO.OUT`)
+- **When:** file is opened (with `STATUS='replace'`) at `CONTROL%RUN = 1` during `RUNINIT`; one row is written per day at every `OUTPUT` call; the file is **closed** at `SEASEND`
+- **Multi-season runs:** a new file is created at the start of each run sequence (file is replaced at `RUN = 1`); subsequent seasons within the same run append rows
+
+| Column | Units | Description | Notes |
+|---|---|---|---|
+| `FILEX` | — | Experiment file name (8 chars) | From `CONTROL%FILEX` |
+| `RUN` | — | Simulation run number | From `CONTROL%RUN` |
+| `YYDOY` | YYDDD | Current date | e.g. `25031` = year 2025, day 31 |
+| `DAS` | d | Days after sowing | From `CONTROL%DAS` |
+| `LAI_HEALTH` | m² m⁻² | Healthy LAI at start of day | `LAI_TOTAL − LAI_INF_LIST(prev)`, bounded ≥ 0 |
+| `LA_DISEASE` | m² m⁻² | Cumulative diseased/removed LAI | Internally stored as cm² m⁻²; divided by 10 000 for output |
+| `LA_INFECT` | m² m⁻² | Instantaneous infectious (sporulating) surface today | Daily total; **not** cumulative; sum across all active cohorts |
+| `NEW_LOSS` | m² m⁻² d⁻¹ | Newly activated diseased area today | Summing over all days reconstructs `LA_DISEASE` |
+| `LWD` | h | Leaf wetness duration | 0–24 h; derived from `RH` via logistic function |
+| `RH` | % | Relative humidity | From weather file (`USE_WTH_RH=.TRUE.`) or computed |
+| `FAT_TEMP` | 0–1 | Combined temperature response `FT = FT_G × FT_D` | Used for infection rate |
+| `LAI_TOTAL` | m² m⁻² | Total canopy LAI from CROPGRO | Retrieved via `GET('PLANT','XLAID',...)` |
+| `SUM7` | 0–21 | 7-day rolling sum of DVIP risk classes | Each day contributes 0–3 |
+| `NSPRAYS` | count | Cumulative fungicide applications | Zero if `USE_FUNGICIDE = .FALSE.` |
+| `FUNG_ACT` | T / F | Fungicide residual protection active | When `T`, `IR` is reduced by `FUNG_EFFICIENCY` |
+| `Severity%` | % | Monotone disease severity | `(LA_DISEASE / LAI_PEAK_SEASON) × 100`; never decreases within a season |
+
+> **Unit note on `DISEASE_LAI`:** the variable is passed from DISMO to PEST as `DISEASE_LAI_DISMO` in **cm² m⁻²**, matching the units of `DISLA` used by `VEGDM` and `GROW`. The output file column `LA_DISEASE` divides by 10 000 to report in m² m⁻².
 
 ---
 
@@ -113,18 +285,20 @@ Luca, G. de A., Fattori Junior, I. M., Del Ponte, E. M., & Marin, F. R. (2025). 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17266278.svg)](https://doi.org/10.5281/zenodo.17266278)
 
 ---
+- **DISMO calibration and validation**:
+  - Luca, G. de A., Fattori Junior, I. M., Del Ponte, E. M., & Marin, F. R. (2026). Process-based simulation of soybean rust in Brazil: A DSSAT-coupled approach. European Journal of Agronomy, 178, 128139.https://doi.org/10.1016/j.eja.2026.128139*
 
-## References
+- **Virtual Lesions**:
+  - Primiano, I. V., & Amorim, L. (2020). *Tropical Plant Pathology*
 
-- **Fungicide Management Logic**:
-  - Godoy, C. V., et al. (2024). *Embrapa Technical Circular* 
-  - Beruski, N. D., et al. (2020). *Residual Period of Fungicide Protection* 
+- **Fungicide Decision Index (DVIP)**:
+  - Beruski, N. D., et al. (2020). *Plant Disease*
+
+- **Fungicide Recommendations**:
+  - Godoy, C. V., et al. (2024). *Embrapa Technical Circular*
 
 - **Epidemiological Model Basis**:
   - Caubel, J., et al. (2017). *European Journal of Agronomy*, 90, 53–66.
 
-- **DSSAT Reference**:
+- **DSSAT Framework**:
   - Jones, J. W., et al. (2003). *The DSSAT Cropping System Model*. *European Journal of Agronomy*, 18(3–4), 235–265.
-
----
-
