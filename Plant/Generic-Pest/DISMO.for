@@ -62,6 +62,7 @@ C-----------------------------------------------------------------------
           
           INTEGER YRDOY, YREMRG, PLANT_LIVE, NVEG0, YREND
           INTEGER DISEASE_LIVE
+          INTEGER IYEAR, IDOY, IDAP
       
           REAL NDS, LESION_S, KVERHULST, RVERHULST
           REAL YMAX, COF_A, COF_B
@@ -90,6 +91,7 @@ C--------- Population (individuals) & potential rate per area -----------
           REAL, SAVE :: LAI_PEAK_SEASON
           REAL, SAVE :: SEVERITY_PCT
           INTEGER, SAVE :: LUN_OUT
+          LOGICAL, SAVE :: HDR_DONE
           
 !-----------------------------------------------------------------------
 !         Constructed types
@@ -130,18 +132,17 @@ C--------- Population (individuals) & potential rate per area -----------
 
           SPORES_YEST = 0.0
           VIRTUAL_PHOTO_FACTOR = 1.0
+          HDR_DONE = .FALSE.
           
           IF (CONTROL%RUN .EQ. 1) THEN
               CALL GETLUN('DISOUT',LUN_OUT)
-              
-          OPEN(LUN_OUT, FILE='DISEASE_DEVELOPMENT.OUT',STATUS='replace')
-          
-          WRITE(LUN_OUT, 24)
-   24     FORMAT('   FILEX     RUN   YYDOY     DAS  LAI_HEALTH',
-     &     '  LA_DISEASE   LA_INFECT    NEW_LOSS         LWD',
-     &     '          RH    FAT_TEMP   LAI_TOTAL        SUM7',
-     &     ' NSPRAYS FUNG_ACT Severity%')
-
+              OPEN(LUN_OUT, FILE='DISMO.OUT',
+     &             STATUS='REPLACE')
+              WRITE(LUN_OUT,'(A)')
+     &             '*DISEASE IMPACT AND SEVERITY MODULE OUTPUT FILE'
+          ELSE
+              OPEN(LUN_OUT, FILE='DISMO.OUT',
+     &             STATUS='OLD', ACCESS='APPEND')
           ENDIF  
 !***********************************************************************
 !  RATE — called every day
@@ -259,7 +260,8 @@ C--------- Population (individuals) & potential rate per area -----------
                  INF_COUNT_PREV = PREV_IS / MAX(LESION_S, EPS)
               END IF
 
-              NPREV_POP = MAX(SPORES_YEST,0.0) + MAX(PREV_LATENTS,0.0)
+              NPREV_POP = MAX(SPORES_YEST,0.0) 
+     &                   + MAX(PREV_LATENTS,0.0)
      &                   + MAX(INF_COUNT_PREV,0.0)
 
 !----- Potential spore rate per unit sporulating area (yesterday) -------
@@ -382,12 +384,58 @@ C--------- Population (individuals) & potential rate per area -----------
           
       ELSEIF (DYNAMIC .EQ. OUTPUT) THEN
 
-            WRITE(LUN_OUT, '(A8, 3I8, 9F12.3, I8, L9, F10.2)') 
-     &  CONTROL%FILEX(:8), 
-     &  CONTROL%RUN, YRDOY,     
-     &  CONTROL%DAS, HEALTH_LAI, DISEASE_LAI/10000.0, IS,NEW_LOSS_TODAY,
-     &  LWD, RH, FT, LAI_TOTAL, REAL(SUM7), NSprays, FungActive,
-     &  SEVERITY_PCT
+!----- Decompose YRDOY into YEAR and DOY --------------------------------
+            IYEAR = YRDOY / 1000
+            IDOY  = YRDOY - IYEAR * 1000
+            IF (IYEAR .LT. 100) THEN
+                IF (IYEAR .GT. 50) THEN
+                    IYEAR = IYEAR + 1900
+                ELSE
+                    IYEAR = IYEAR + 2000
+                END IF
+            END IF
+
+!----- Days after planting -----------------------------------------------
+            IDAP = MAX(DAE - 1, 0)
+
+!----- Write run header once per run -------------------------------------
+            IF (.NOT. HDR_DONE) THEN
+              HDR_DONE = .TRUE.
+              WRITE(LUN_OUT,'(A)') ' '
+              WRITE(LUN_OUT,'(A,I4,A,A,A,A,1X,A,I5)')
+     &         '*RUN',CONTROL%RUN,'        : ',
+     &         CONTROL%ENAME,
+     &         '                      ',
+     &         CONTROL%MODEL,
+     &         CONTROL%TRTNUM
+              WRITE(LUN_OUT,'(A,A)')
+     &         ' MODEL          : ', CONTROL%MODEL
+              WRITE(LUN_OUT,'(A,A)')
+     &         ' EXPERIMENT     : ', CONTROL%FILEX
+              WRITE(LUN_OUT,'(A)')
+     &         ' DATA PATH      :'
+              WRITE(LUN_OUT,'(A,I2,A,A,A,A)')
+     &         ' TREATMENT',CONTROL%TRTNUM,
+     &         '    : ',CONTROL%ENAME,
+     &         '                      ',CONTROL%MODEL
+              WRITE(LUN_OUT,'(A)') ' '
+              WRITE(LUN_OUT,'(A)') '!'
+              WRITE(LUN_OUT,'(A)') '!'
+              WRITE(LUN_OUT, 25)
+   25         FORMAT('@YEAR  DOY   DAS   DAP',
+     &         '  LAI_HLTH  LA_DISEA  LA_INFEC',
+     &         '  NEW_LOSS       LWD        RH',
+     &         '   FAT_TMP  LAI_TOTL      SUM7',
+     &         ' NSPRAYS FUNG_ACT Severity')
+            ENDIF
+
+            WRITE(LUN_OUT,
+     &       '(I5,I5,I6,I6,8F10.3,F10.1,I8,L9,F9.2)')
+     &        IYEAR, IDOY, CONTROL%DAS, IDAP,
+     &        HEALTH_LAI, DISEASE_LAI/10000.0, IS,
+     &        NEW_LOSS_TODAY,
+     &        LWD, RH, FT, LAI_TOTAL, REAL(SUM7),
+     &        NSprays, FungActive, SEVERITY_PCT
 
 !***********************************************************************
 !  SEASEND — called once (season end)
