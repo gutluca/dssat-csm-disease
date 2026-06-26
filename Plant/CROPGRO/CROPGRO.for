@@ -758,6 +758,8 @@ C-----------------------------------------------------------------------
           !Retrieve AGEFAC and PG from ETPHOT routine.
           CALL GET('SPAM', 'AGEFAC', AGEFAC)
           CALL GET('SPAM', 'PG'    , PG)
+          !Correct PG for healthy leaf fraction (consistent with mode C) - dismo modification for L mode reduce yield
+          IF (XLAI .GT. 1.0E-6) PG = PG * (XHLAI / XLAI)
         ELSEIF (MEPHO .EQ. 'C') THEN
           CALL PHOTO(CONTROL, 
      &    BETN, CO2, DXR57, EXCESS, KCAN, KC_SLOPE,       !Input

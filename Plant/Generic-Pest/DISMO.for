@@ -347,7 +347,19 @@ C--------- Population (individuals) & potential rate per area -----------
 
 !----- Internal var uses cm2 m-2, output will divide by 10000 --
               
-              DISEASE_LAI = MIN(LAI_TOTAL,LAI_INF_LIST(DAE_IDX))*10000.0
+              !----- Effective DISEASE_LAI: scale by severity fraction applied to
+              !      current LAI. Natural senescence removes diseased and healthy
+              !      tissue proportionally.
+              IF (LAI_PEAK_SEASON .GT. EPS) THEN
+                  DISEASE_LAI = (LAI_INF_LIST(DAE_IDX) / 
+     &                           LAI_PEAK_SEASON) *
+     &                          LAI_TOTAL * 10000.0
+                  DISEASE_LAI = MIN(DISEASE_LAI,
+     &                              LAI_TOTAL * 10000.0)
+              ELSE
+                  DISEASE_LAI = 0.0
+              END IF
+              DISEASE_LAI = MAX(DISEASE_LAI, 0.0)
               
 !----- Calculate disease severity --
               
