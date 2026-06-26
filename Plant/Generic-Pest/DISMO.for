@@ -14,6 +14,7 @@ C  11/17/2025 Virtual lesions factor added.
 C  12/09/2025 Severity calculation in output file
 C  03/05/2026 Removed hardcoded paths and added logic to find parameter file in DSSAT folders.
 C  03/10/2026 Moved DISMO.for from Plant\CROPGRO to Plant\Generic-Pest
+C  06/25/2026 Improved output file formatting
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
@@ -423,17 +424,14 @@ C--------- Population (individuals) & potential rate per area -----------
               WRITE(LUN_OUT,'(A)') '!'
               WRITE(LUN_OUT, 25)
    25         FORMAT('@YEAR  DOY   DAS   DAP',
-     &         '  LAI_HLTH  LA_DISEA  LA_INFEC',
-     &         '  NEW_LOSS       LWD        RH',
-     &         '   FAT_TMP  LAI_TOTL      SUM7',
-     &         ' NSPRAYS FUNG_ACT Severity')
+     &         '      LAIH      LWDh      RHU%      FTMP      LAIT',
+     &         '      SUM7 NSPRAYS     FACT     SEV%')
             ENDIF
 
             WRITE(LUN_OUT,
-     &       '(I5,I5,I6,I6,8F10.3,F10.1,I8,L9,F9.2)')
+     &       '(I5,I5,I6,I6,5F10.3,F10.1,I8,L9,F9.2)')
      &        IYEAR, IDOY, CONTROL%DAS, IDAP,
-     &        HEALTH_LAI, DISEASE_LAI/10000.0, IS,
-     &        NEW_LOSS_TODAY,
+     &        HEALTH_LAI,
      &        LWD, RH, FT, LAI_TOTAL, REAL(SUM7),
      &        NSprays, FungActive, SEVERITY_PCT
 
