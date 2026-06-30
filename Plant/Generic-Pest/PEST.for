@@ -32,7 +32,7 @@ C             PESTCP
 C             ROOTDM
 C             SEEDDM
 C             VEGDM
-C             DISEASE_LEAF
+C             DISEASE_LEAF - DISMO
 C=======================================================================
       SUBROUTINE PEST(CONTROL, ISWITCH, 
      &    AREALF, CLW, CSW, LAGSD, LNGPEG, NR2, PGAVL,    !Input
@@ -155,7 +155,11 @@ C     DISMO state arrays
 
       ISWDIS  = ISWITCH % ISWDIS
 
-      RUN_DISMO = (ISWDIS .EQ. 'D')
+      IF (ISWDIS .EQ. 'Y') THEN
+        INQUIRE(FILE='disease_parameters.txt', EXIST=RUN_DISMO)
+      ELSE
+        RUN_DISMO = .FALSE.
+      ENDIF
 
 C***********************************************************************
 C***********************************************************************
@@ -199,7 +203,7 @@ C***********************************************************************
 C-----------------------------------------------------------------------
 C     Subroutine IPPROG reads FILET, the pest time series file.
 C-----------------------------------------------------------------------
-      IF (ISWDIS .EQ. 'Y') THEN
+      IF (ISWDIS .EQ. 'Y' .AND. .NOT. RUN_DISMO) THEN
         CALL IPPROG(CONTROL, 
      &    FILET, PATHEX, PID, YRPLT, TRTNUM,              !Input
      &    IDAP, PCN, PNO, POBS, PSTHD, YPL)               !Output
@@ -298,7 +302,7 @@ C-----------------------------------------------------------------------
 !***********************************************************************
       ELSEIF (DYNAMIC .EQ. RATE) THEN
 C-----------------------------------------------------------------------
-C     DISMO daily rate - runs before classic PEST when ISWDIS='D'
+C     DISMO daily rate - runs before classic PEST when RUN_DISMO=.TRUE.
 C-----------------------------------------------------------------------
       IF (RUN_DISMO) THEN
         DISLA = 0.0
@@ -320,6 +324,7 @@ C-----------------------------------------------------------------------
 !       Merge DISMO diseased leaf area into the coupling framework
         DISLA = DISLA + DISEASE_LAI_DISMO
         CALL PUT('PLANT', 'VPHOTF', VPHOTF_DISMO)
+        RETURN
       ENDIF
 C-----------------------------------------------------------------------
 C     Classic PEST rate routines - only when PCN > 0 (ISWDIS='Y')
@@ -395,6 +400,10 @@ C-----------------------------------------------------------------------
      &    PGAVL, PPSR, TPSR, VPHOTF_DISMO,                !Input
      &    ASMDOT, CASM,                                   !Output
      &    INTEGR)                                         !Control
+C-----------------------------------------------------------------------
+C     If DISMO is active, skip classic PEST integration
+C-----------------------------------------------------------------------
+      IF (RUN_DISMO) RETURN
 C-----------------------------------------------------------------------
 C     Classic PEST integration - only when PCN > 0 (ISWDIS='Y')
 C-----------------------------------------------------------------------

@@ -60,7 +60,6 @@ C=======================================================================
      &  PHOTO, PLANTNBAL, PODDET, PODS, RESPIR, ROOTS, SENES,
      &  VEGGR
       SAVE
-      ! removed DISEASE_LEAF from EXTERNAL
 !-----------------------------------------------------------------------
       CHARACTER*1 DETACH, IDETO, ISWNIT, ISWSYM,
      &    ISWWAT, ISWDIS, ISWPHO, MEPHO, RNMODE
@@ -275,18 +274,9 @@ C=======================================================================
      &    RSTAGE, RVSTGE, STGDOY, SeedFrac, TDUMX,        !Output
      &    TDUMX2, VegFrac, VSTAGE, YREMRG, YRNR1,         !Output
      &    YRNR2, YRNR3, YRNR5, YRNR7)                     !Output
-      
-      !-----------------------------------------------------------------------
-! - Disease
-      !CALL DISEASE_LEAF(DYNAMIC,
-      !&    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,        !Input
-      !&    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,       !Input
-      !&    YRDOY, YREMRG, NVEG0, YREND,                    !Input
-      !&    DISLA,VIRTUAL_PHOTO_FACTOR)                     !Output
-
 
 !-----------------------------------------------------------------------
-      IF (ISWDIS .EQ. 'Y'.OR. ISWDIS .EQ. 'D') THEN
+      IF (ISWDIS .EQ. 'Y') THEN
         CALL PEST(CONTROL, ISWITCH, 
      &    AREALF, CLW, CSW, LAGSD, LNGPEG, NR2, PGAVL,    !Input
      &    PHTIM, PLTPOP, RTWT, SLA, SLDOT, SOILPROP,      !Input
@@ -733,16 +723,8 @@ C-----------------------------------------------------------------------
      &    YRNR2, YRNR3, YRNR5, YRNR7)                     !Output
       ENDIF
       
-!----------------------------------------------------------------------   
-      ! Disease
-      !CALL DISEASE_LEAF(DYNAMIC,
-      !&    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,       !Input
-      !&    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
-      !&    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-      !&    DISLA,VIRTUAL_PHOTO_FACTOR)                    !Output
-
 !----------------------------------------------------------------------
-      IF (ISWDIS .EQ. 'Y'.OR. ISWDIS .EQ. 'D') THEN
+      IF (ISWDIS .EQ. 'Y') THEN
         CALL PEST(CONTROL, ISWITCH, 
      &    AREALF, CLW, CSW, LAGSD, LNGPEG, NR2, PGAVL,    !Input
      &    PHTIM, PLTPOP, RTWT, SLA, SLDOT, SOILPROP,      !Input
@@ -893,13 +875,6 @@ C-----------------------------------------------------------------------
      &      PConc_Shut, PConc_Root, PConc_Shel, PConc_Seed, !Output
      &      PStres1, PStres2, PUptake, FracRts)             !Output
         ENDIF
-      
-      !CALL DISEASE_LEAF(DYNAMIC,
-      !&    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,       !Input
-      !&    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
-      !&    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-      !&    DISLA,VIRTUAL_PHOTO_FACTOR)                    !Output
-
 !-----------------------------------------------------------------------
       ENDIF
 !----------------------------------------------------------------------
@@ -948,16 +923,12 @@ C-----------------------------------------------------------------------
       ENDIF
       
 !-----------------------------------------------------------------------
-!     Reduce PGAVL by disease physiological stress (virtual lesions)
-!-----------------------------------------------------------------------
-      !PGAVL = PGAVL * VIRTUAL_PHOTO_FACTOR !Dismo
-!-----------------------------------------------------------------------
 !     Reduce PGAVL if pest damage occurs to C assimilation
 !     Moved to PEST module - chp
 !-----------------------------------------------------------------------
 !     Call PEST Module for INTEGRATION calculations
 !-----------------------------------------------------------------------
-      IF (ISWDIS.EQ.'Y'.OR. ISWDIS .EQ. 'D') THEN
+      IF (ISWDIS.EQ.'Y') THEN
         CALL PEST(CONTROL, ISWITCH, 
      &    AREALF, CLW, CSW, LAGSD, LNGPEG, NR2, PGAVL,    !Input
      &    PHTIM, PLTPOP, RTWT, SLA, SLDOT, SOILPROP,      !Input
@@ -965,7 +936,7 @@ C-----------------------------------------------------------------------
      &    RLV, SDNO, SHELN, SWIDOT,                       !Input/Output
      &    VSTAGE, WSHIDT, WTSD, WTSHE,                    !Input/Output
      &    ASMDOT, DISLA, NPLTD, PPLTD,                    !Output
-     &    SDDES, WLIDOT, WRIDOT, WSIDOT,SDWT)                  !Output
+     &    SDDES, WLIDOT, WRIDOT, WSIDOT,SDWT)             !Output
 
         IF (ASMDOT .GT. 1.E-4) THEN
           PGAVL = PGAVL - ASMDOT
@@ -1319,7 +1290,7 @@ C-----------------------------------------------------------------------
           STGDOY(16) = YREND
         ENDIF
 
-        IF (ISWDIS.EQ.'Y'.OR. ISWDIS .EQ. 'D') THEN
+        IF (ISWDIS.EQ.'Y') THEN
           CALL PEST(CONTROL, ISWITCH, 
      &      AREALF, CLW, CSW, LAGSD, LNGPEG, NR2, PGAVL,    !Input
      &      PHTIM, PLTPOP, RTWT, SLA, SLDOT, SOILPROP,      !Input
@@ -1329,12 +1300,6 @@ C-----------------------------------------------------------------------
      &      ASMDOT, DISLA, NPLTD, PPLTD,                    !Output
      &      SDDES, WLIDOT, WRIDOT, WSIDOT,SDWT)             !Output
         ENDIF
-        
-        !CALL DISEASE_LEAF(DYNAMIC,
-      !&    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,            !Input
-      !&    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
-      !&    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-      !&    DISLA,VIRTUAL_PHOTO_FACTOR)                      !Output
 
         CALL PODS(DYNAMIC, 
      &    AGRSD1, AGRSH1, DLAYR, DRPP, DUL, FILECC,       !Input
@@ -1408,12 +1373,6 @@ C-----------------------------------------------------------------------
         SENESCE % ResLig = 0.0
         SENESCE % ResE   = 0.0
         
-! Disease 
-        !CALL DISEASE_LEAF(DYNAMIC,
-      !&    CONTROL, ISWITCH, TMIN, TMAX,RHUM, XLAI,            !Input
-      !&    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,      !Input
-      !&    YRDOY, YREMRG, NVEG0, YREND,                   !Input
-      !&    DISLA, VIRTUAL_PHOTO_FACTOR)                    !Output
       ENDIF
 
 !***********************************************************************

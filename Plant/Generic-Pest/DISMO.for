@@ -1,6 +1,6 @@
 C=======================================================================
 C  Disease Impact and Severity Module
-C  DISMO, Subroutine, Gustavo de Angelo Luca & Izael Martins Fattori Jr
+C  DISMO, Subroutine, Gustavo de Angelo Luca, Izael Martins Fattori Jr, Fábio Ricardo Marin
 C  Luiz de Queiroz College of Agriculture (ESALQ), University of São Paulo, Piracicaba, Brazil
 C  
 C-----------------------------------------------------------------------
@@ -28,7 +28,7 @@ C-----------------------------------------------------------------------
      &             F_TAVG, F_LR, F_LS, F_PS, F_LAF, F_LAR, F_PPSR,
      &             F_PPSR_POP, APPLY_FUNGICIDE, CALC_DVIP,
      &             READ_DISEASE_PARAMETERS, F_VIRTUAL_LESIONS,
-     &             F_SEVERITY, GETLUN, PATH
+     &             F_SEVERITY, GETLUN
           SAVE
 C-----------------------------------------------------------------------
 C  Switches / constants
@@ -492,7 +492,7 @@ C--------- Population (individuals) & potential rate per area -----------
 
           USE ModuleDefs
           IMPLICIT NONE
-          EXTERNAL PATH, GETLUN
+          EXTERNAL GETLUN
           
           TYPE (ControlType) CONTROL
           
@@ -506,19 +506,15 @@ C--------- Population (individuals) & potential rate per area -----------
           CHARACTER(LEN=6)   ID        
           CHARACTER(LEN=20)  VRNAME    
           CHARACTER(LEN=120) DISFIL
-          CHARACTER(LEN=80)  PATHPE
-          CHARACTER(LEN=12)  NAMEF
-          INTEGER LUN_DIS, IOS
-          LOGICAL FEXIST
+          CHARACTER(LEN=300) LINE
+          CHARACTER(LEN=20)  TARGET_DISEASE
+          INTEGER LUN_DIS, IOS, STATE
+          LOGICAL FEXIST, FOUND_DISEASE
 
-          INQUIRE(FILE='disease_parameters.txt', EXIST=FEXIST)
-          
-          IF (FEXIST) THEN
-              DISFIL = 'disease_parameters.txt'
-          ELSE
-              CALL PATH('PSD', CONTROL % DSSATP, PATHPE, 1, NAMEF)
-              DISFIL = TRIM(PATHPE) // 'disease_parameters.txt'
-          END IF
+!         Only look in the local (current working) directory
+          DISFIL = 'disease_parameters.txt'
+          INQUIRE(FILE=TRIM(DISFIL), EXIST=FEXIST)
+          IF (.NOT. FEXIST) RETURN
 
           CALL GETLUN('DISINP', LUN_DIS)
           
@@ -527,21 +523,68 @@ C--------- Population (individuals) & potential rate per area -----------
 
           IF (IOS /= 0) RETURN
 
-          READ(LUN_DIS, *)
-          READ(LUN_DIS, *)
-          READ(LUN_DIS, *)
-          READ(LUN_DIS, *)
-          READ(LUN_DIS, *)
+!         --- State-machine driven parsing ---
+!         STATE 0 : searching for section tags
+!         STATE 1 : found *DISEASE CONTROL; waiting for @TARGET_DISEASE header
+!         STATE 2 : next valid line is the target disease name value
+!         STATE 3 : found *DISEASE DATABASE; waiting for @VAR# column header
+!         STATE 4 : reading database records
 
-          READ(LUN_DIS,*) ID, VRNAME, 
-     &                 NDS, LESION_S, KVERHULST, RVERHULST, 
-     &                 YMAX, COF_A, COF_B,                  
-     &                 TMIN_G, TOT_G, TMAX_G,               
-     &                 TMIN_D, TOT_D, TMAX_D,               
-     &                 LDmin, LESIONAGEOPT, LESLIFEMAX,
-     &                 DAE_START, beta
+          TARGET_DISEASE = ' '
+          STATE          = 0
+          FOUND_DISEASE  = .FALSE.
+
+          DO WHILE (.TRUE.)
+              READ(LUN_DIS, '(A)', IOSTAT=IOS) LINE
+              IF (IOS /= 0) EXIT          ! EOF or read error
+
+              LINE = ADJUSTL(LINE)
+              IF (LEN_TRIM(LINE) .EQ. 0)  CYCLE   ! skip blank lines
+              IF (LINE(1:1) .EQ. '!')     CYCLE   ! skip comment lines
+
+              SELECT CASE (STATE)
+
+              CASE (0)  ! searching for section tags
+                  IF (INDEX(LINE,'*DISEASE CONTROL') .GT. 0) THEN
+                      STATE = 1
+                  ELSEIF (INDEX(LINE,'*DISEASE DATABASE') .GT. 0) THEN
+                      STATE = 3
+                  END IF
+
+              CASE (1)  ! found *DISEASE CONTROL; wait for @TARGET_DISEASE header
+                  IF (LINE(1:1) .EQ. '@') STATE = 2
+
+              CASE (2)  ! next valid line is the target disease name
+                  TARGET_DISEASE = TRIM(LINE)
+                  STATE = 0             ! continue searching for *DISEASE DATABASE
+
+              CASE (3)  ! found *DISEASE DATABASE; wait for @VAR# column header
+                  IF (LINE(1:1) .EQ. '@') STATE = 4
+
+              CASE (4)  ! reading database records
+                  READ(LINE, *, IOSTAT=IOS) ID, VRNAME,
+     &                NDS, LESION_S, KVERHULST, RVERHULST,
+     &                YMAX, COF_A, COF_B,
+     &                TMIN_G, TOT_G, TMAX_G,
+     &                TMIN_D, TOT_D, TMAX_D,
+     &                LDmin, LESIONAGEOPT, LESLIFEMAX,
+     &                DAE_START, beta
+                  IF (IOS .EQ. 0 .AND.
+     &                TRIM(VRNAME) .EQ. TRIM(TARGET_DISEASE)) THEN
+                      FOUND_DISEASE = .TRUE.
+                      EXIT
+                  END IF
+
+              END SELECT
+          END DO
 
           CLOSE(LUN_DIS)
+
+          IF (.NOT. FOUND_DISEASE) THEN
+              WRITE(*,'(A,A)')
+     &            'WARNING (DISMO): disease not found in database: ',
+     &            TRIM(TARGET_DISEASE)
+          END IF
 
       END SUBROUTINE READ_DISEASE_PARAMETERS
 
@@ -1024,10 +1067,4 @@ C--------- Population (individuals) & potential rate per area -----------
 ! CALC_DVIP   : Daily infection-probability index class (0..3)
 ! APPLY_FUNGICIDE:
 !   7-day risk sum trigger; optional spray; residual IR reduction window.
-! F_VIRTUAL_LESIONS: Simulates the green leaf area around the necrotic area that does less photosynthesis due to the disease stress)
-
-! --------------------------- Files/IO ---------------------------------
-! ! Unit LUN_OUT : Writes daily diagnostics to Current Working Directory
-! Output cols  : RUN, YYDOY, DAS, LAI_HEALTH, LA_DISEASE, LAI_INFECT,
-!                NEW_LOSS, LWD, RH, FAT_TEMP(=FT), LAI_TOTAL, SUM7, 
-!                NSPRAYS, FUNG_ACT (logical), Severity%
+! F_VIRTUAL_LESIONS: Simulates the green leaf area around the necrotic area that does less photosynthesis
