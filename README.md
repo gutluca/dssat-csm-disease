@@ -1,4 +1,4 @@
-# Coupling of an Epidemiological Module for Generic Leaf Fungal Diseases with the CROPGRO-Soybean Crop Simulation Model (DSSAT)
+# Coupling of an Epidemiological Module for Generic Leaf Fungal Diseases with the CROPGRO Crop Simulation Model (DSSAT)
 
 **Authors**: Gustavo de A. Luca, Izael M. Fattori Jr., Fábio R. Marin
 
@@ -10,9 +10,11 @@
 
 This repository contains a modified version of the [DSSAT](https://dssat.net/) (Decision Support System for Agrotechnology Transfer) source code, integrating a generic epidemiological model for foliar fungal diseases into the CROPGRO template plant growth module.
 
-The new module, **DISMO** - Disease Impact and Severity Module (`DISEASE_LEAF` subroutine), simulates the progression of leaf diseases such as Asian Soybean Rust (*Phakopsora pachyrhizi*) using a daily cohort-based state-transition model. It calculates diseased leaf area from environmental drivers and pathogen dynamics, and reduces canopy photosynthesis through a **virtual lesion factor** (`VPHOTF`) coupled to CROPGRO's carbon assimilation framework via the existing Generic-Pest (`PEST`) module.
+The new module, **DISMO** - Disease Impact and Severity Module (`DISEASE_LEAF` subroutine), simulates the progression of leaf diseases such as Asian Soybean Rust (*Phakopsora pachyrhizi*) using a daily cohort-based state-transition model. It calculates diseased leaf area from environmental drivers and pathogen dynamics, and reduces canopy photosynthesis via the existing Generic-Pest (`PEST`) module.
 
-The module is activated by a single switch in the DSSAT experiment file: **`ISWDIS = 'D'`**.
+The module is activated by a single switch in the DSSAT experiment file (FILEX): **`ISWDIS = 'Y'`**.
+DISMO will only activate if  ISWDIS = 'Y' AND the input file (disease_parameters.txt) is in the current simulation directory
+(for example: if you are simulating soybean, the input parameters should be in 'C:\DSSAT48\Soybean').
 
 > **Architecture note (March 2026):** `DISMO.for` was moved from `Plant\CROPGRO` to `Plant\Generic-Pest` and is now invoked exclusively through the **Generic-Pest (`PEST`) module**. No direct calls to `DISEASE_LEAF` remain in `CROPGRO.for`.
 
@@ -101,11 +103,11 @@ When `USE_FUNGICIDE = .FALSE.`, spray decisions are still tracked (for diagnosti
 
 #### Current architecture
 
-`DISEASE_LEAF` is called **exclusively inside `PEST.for`**. `CROPGRO.for` calls `PEST` unchanged — only minimal additions were made to CROPGRO (`PUT` calls for `XLAID`, `NVEG0D`, `YREMGD`, `YRENDD`, and the `ISWDIS='D'` condition in the `PEST` call guard).
+`DISEASE_LEAF` is called **exclusively inside `PEST.for`**. `CROPGRO.for` calls `PEST` unchanged — only minimal additions were made to CROPGRO (`PUT` calls for `XLAID`, `NVEG0D`, `YREMGD`, `YRENDD`, and the `ISWDIS='Y'` condition in the `PEST` call guard).
 
 ```
 CROPGRO.for
-  └── CALL PEST(...)                           ← ISWDIS = 'Y' or 'D'
+  └── CALL PEST(...)                           ← ISWDIS = 'Y'
         └── PEST.for
               ├── [RUNINIT]   IF RUN_DISMO → CALL DISEASE_LEAF(RUNINIT)
               ├── [SEASINIT]  IF ISWDIS='Y' → CALL IPPROG (classic time-series)
@@ -189,16 +191,13 @@ The module is activated by the **`DISES`** field in the `*SIMULATION CONTROLS` s
 | `DISES` | Behavior |
 |---|---|
 | `N` | No pest or disease simulation |
-| `Y` | Classic DSSAT pest module — requires a FILET pest time-series file |
-| `D` | **DISMO epidemiological model** — reads `disease_parameters.txt`; no FILET required |
+| `Y` without the 'disease_parameters.txt'| Classic DSSAT pest module — requires a FILET pest time-series file |
 
-When `ISWDIS = 'D'`:
+When `ISWDIS = 'Y'` and 'disease_parameters.txt' inside the current simulation directory:
 - `CROPGRO.for` calls `PEST` (same entry point as for `'Y'`)
 - Inside `PEST.for`, `RUN_DISMO = .TRUE.` activates `DISEASE_LEAF` at every simulation phase
 - `IPPROG` is **not** called, so `PCN = 0` and classic coupling-point routines (`PESTCP`, `SEEDDM`, `VEGDM`, `ROOTDM`) are skipped at `RATE` and `INTEGR`
 - Weather and LAI data are automatically retrieved inside `PEST` via the DSSAT `GET`/`PUT` exchange mechanism
-
-> `ISWDIS = 'D'` and `'Y'` are mutually exclusive. Do not set both simultaneously.
 
 ### 3. Input Files
 
@@ -247,7 +246,7 @@ Two compile-time `PARAMETER` constants control optional behaviour:
 
 ### 4. Output Files
 
-#### `DISEASE_DEVELOPMENT.OUT`
+#### `DISMO.OUT`
 
 - **Location:** written to the **current working directory** (same folder as DSSAT output files such as `PLANTGRO.OUT`)
 - **When:** file is opened (with `STATUS='replace'`) at `CONTROL%RUN = 1` during `RUNINIT`; one row is written per day at every `OUTPUT` call; the file is **closed** at `SEASEND`
