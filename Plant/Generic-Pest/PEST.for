@@ -19,7 +19,7 @@ C  05/09/2003 CHP Expanded number of pests to 200 (from 100)
 C  06/18/2015 GH  Moved MaxPest to ModuleDefs
 !  01/26/2023 CHP Reduce compile warnings: add EXTERNAL stmts, remove 
 !                 unused variables, shorten lines. 
-!  03/10/2026 GAL Added DISMO integration (ISWDIS='D')
+!  03/10/2026 GAL Added DISMO integration
 C-----------------------------------------------------------------------
 C  Called by: PLANT
 C  Calls:     ASMDM

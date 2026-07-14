@@ -408,7 +408,7 @@ C--------- Population (individuals) & potential rate per area -----------
                 END IF
             END IF
 
-!----- Days after planting -----------------------------------------------
+!----- Days after emergence -----------------------------------------------
             IDAP = MAX(DAE - 1, 0)
 
 !----- Write run header once per run -------------------------------------
@@ -435,7 +435,7 @@ C--------- Population (individuals) & potential rate per area -----------
               WRITE(LUN_OUT,'(A)') '!'
               WRITE(LUN_OUT,'(A)') '!'
               WRITE(LUN_OUT, 25)
-   25         FORMAT('@YEAR  DOY   DAS   DAP',
+   25         FORMAT('@YEAR  DOY   DAS   DAE',
      &         '      LAIH      LWDh      RHU%      FTMP      LAIT',
      &         '      SUM7 NSPRAYS     FACT     SEV%')
             ENDIF
