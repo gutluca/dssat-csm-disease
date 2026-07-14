@@ -124,7 +124,7 @@ C     DISMO state arrays
       REAL, DIMENSION(200)   :: SUP_INF_LIST_P
       REAL, DIMENSION(200)   :: LAI_INF_LIST_P
       REAL    DISEASE_LAI_DISMO
-      REAL    VPHOTF_DISMO
+      REAL    VPHOTF_DISMO, WLIDOT_DISMO
       REAL    TMIN_DIS, TMAX_DIS, RHUM_DIS, XLAI_DIS
       INTEGER YREMRG_DIS, NVEG0_DIS, YREND_DIS
       LOGICAL RUN_DISMO
@@ -189,10 +189,10 @@ C-----------------------------------------------------------------------
       
       CALL DISEASE_LEAF(RUNINIT,
      &    CONTROL, ISWITCH, 0.0, 0.0, 0.0,
-     &    0.0,
+     &    0.0, 0.0, 0.0,
      &    ESP_LAT_HIST_P, SUP_INF_LIST_P, LAI_INF_LIST_P,
      &    YRDOY, 0, 0, 0,
-     &    DISEASE_LAI_DISMO, VPHOTF_DISMO)
+     &    DISEASE_LAI_DISMO, VPHOTF_DISMO, WLIDOT_DISMO)
       ENDIF
 
 C***********************************************************************
@@ -277,6 +277,7 @@ C-----------------------------------------------------------------------
         LAI_INF_LIST_P = 0.0
         DISEASE_LAI_DISMO = 0.0
         VPHOTF_DISMO = 1.0
+        WLIDOT_DISMO = 0.0
 
         CALL GET(WEATHER_PEST)
         TMIN_DIS = WEATHER_PEST % TMIN
@@ -289,10 +290,10 @@ C-----------------------------------------------------------------------
 
         CALL DISEASE_LEAF(SEASINIT,
      &    CONTROL, ISWITCH, TMIN_DIS, TMAX_DIS, RHUM_DIS,
-     &    XLAI_DIS,
+     &    XLAI_DIS, WTLF, SLDOT,
      &    ESP_LAT_HIST_P, SUP_INF_LIST_P, LAI_INF_LIST_P,
      &    YRDOY, YREMRG_DIS, NVEG0_DIS, YREND_DIS,
-     &    DISEASE_LAI_DISMO, VPHOTF_DISMO)
+     &    DISEASE_LAI_DISMO, VPHOTF_DISMO, WLIDOT_DISMO)
       ENDIF
       CALL PUT('PLANT', 'VPHOTF', VPHOTF_DISMO)
 
@@ -316,13 +317,14 @@ C-----------------------------------------------------------------------
 
         CALL DISEASE_LEAF(RATE,
      &    CONTROL, ISWITCH, TMIN_DIS, TMAX_DIS, RHUM_DIS,
-     &    XLAI_DIS,
+     &    XLAI_DIS, WTLF, SLDOT,
      &    ESP_LAT_HIST_P, SUP_INF_LIST_P, LAI_INF_LIST_P,
      &    YRDOY, YREMRG_DIS, NVEG0_DIS, YREND_DIS,
-     &    DISEASE_LAI_DISMO, VPHOTF_DISMO)
+     &    DISEASE_LAI_DISMO, VPHOTF_DISMO, WLIDOT_DISMO)
 
 !       Merge DISMO diseased leaf area into the coupling framework
         DISLA = DISLA + DISEASE_LAI_DISMO
+        WLIDOT = WLIDOT_DISMO
         CALL PUT('PLANT', 'VPHOTF', VPHOTF_DISMO)
         RETURN
       ENDIF
@@ -462,10 +464,10 @@ C-----------------------------------------------------------------------
         CALL GET('PLANT', 'XLAID', XLAI_DIS)
         CALL DISEASE_LEAF(DYNAMIC,
      &    CONTROL, ISWITCH, TMIN_DIS, TMAX_DIS, RHUM_DIS,
-     &    XLAI_DIS,
+     &    XLAI_DIS, WTLF, SLDOT,
      &    ESP_LAT_HIST_P, SUP_INF_LIST_P, LAI_INF_LIST_P,
      &    YRDOY, YREMRG_DIS, NVEG0_DIS, YREND_DIS,
-     &    DISEASE_LAI_DISMO, VPHOTF_DISMO)
+     &    DISEASE_LAI_DISMO, VPHOTF_DISMO, WLIDOT_DISMO)
       ENDIF
 
 !***********************************************************************

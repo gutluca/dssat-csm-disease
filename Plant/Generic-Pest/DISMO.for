@@ -18,9 +18,11 @@ C  06/25/2026 Improved output file formatting
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
+     &    WTLF, SLDOT,
      &    ESP_LAT_HIST, SUP_INF_LIST, LAI_INF_LIST,       ! Input/State
      &    YRDOY, YREMRG, NVEG0, YREND,                    ! Input
-     &    DISEASE_LAI, VIRTUAL_PHOTO_FACTOR)              ! Output
+     &    DISEASE_LAI, VIRTUAL_PHOTO_FACTOR,              ! Output
+     &    DISEASE_SEN_RATE)                               ! Output
 C-----------------------------------------------------------------------
           USE ModuleDefs     
           IMPLICIT NONE
@@ -28,7 +30,7 @@ C-----------------------------------------------------------------------
      &             F_TAVG, F_LR, F_LS, F_PS, F_LAF, F_LAR, F_PPSR,
      &             F_PPSR_POP, APPLY_FUNGICIDE, CALC_DVIP,
      &             READ_DISEASE_PARAMETERS, F_VIRTUAL_LESIONS,
-     &             F_SEVERITY, GETLUN
+     &             F_SEVERITY, GETLUN, F_DEFOLIATION
           SAVE
 C-----------------------------------------------------------------------
 C  Switches / constants
@@ -73,6 +75,8 @@ C-----------------------------------------------------------------------
           REAL HEALTH_LAI, HEALTH_LAI_AVAIL, NEW_LOSS_TODAY
           REAL INF_AREA_K
           REAL s, beta, fvl, VIRTUAL_PHOTO_FACTOR
+          REAL WTLF, SLDOT, DISEASE_SEN_RATE
+          REAL rrds
           
 C--------- Population (individuals) & potential rate per area -----------
           REAL SPORES_YEST, PREV_LATENTS, INF_COUNT_PREV, NPREV_POP
@@ -111,6 +115,7 @@ C--------- Population (individuals) & potential rate per area -----------
 
           IS = 0.0
           PLANT_LIVE = 0
+          DISEASE_LIVE = 0
           DAE = 0
 
           ESP_LAT_HIST = 0.0
@@ -119,6 +124,7 @@ C--------- Population (individuals) & potential rate per area -----------
           ADMITTED_AREA= 0.0
           
           DISEASE_LAI  = 0.0
+          DISEASE_SEN_RATE = 0.0
           
           idx = 1
           DVIP_pts(:) = 0
@@ -168,7 +174,7 @@ C--------- Population (individuals) & potential rate per area -----------
                CALL READ_DISEASE_PARAMETERS(CONTROL,NDS, LESION_S, 
      &              KVERHULST,YMAX, COF_A, COF_B, RVERHULST, TMIN_G,
      &              TOT_G,TMAX_G,TMIN_D, TOT_D, TMAX_D, LDmin,
-     &              LESIONAGEOPT,LESLIFEMAX,DAE_START, beta)
+     &              LESIONAGEOPT,LESLIFEMAX,DAE_START, beta, rrds)
           END IF
               
 !----- Disease activation (starts after DAE_START) ----------------------
@@ -381,6 +387,14 @@ C--------- Population (individuals) & potential rate per area -----------
           ! Store result in a global variable to be exported to CROPGRO
           VIRTUAL_PHOTO_FACTOR = fvl
           
+!----- Defoliation / Senescence Logic
+          IF (DISEASE_LIVE .EQ. 1) THEN
+              CALL F_DEFOLIATION (WTLF, SLDOT, SEVERITY_PCT, rrds,
+     &                           DISEASE_SEN_RATE)
+          ELSE
+              DISEASE_SEN_RATE = 0.0
+          END IF
+          
 !----- ------------------------------------------------------          
           ELSE
               HEALTH_LAI = LAI_TOTAL
@@ -470,6 +484,7 @@ C--------- Population (individuals) & potential rate per area -----------
             NSprays = 0
             LAI_PEAK_SEASON = 0.0
             SEVERITY_PCT    = 0.0
+            DISEASE_SEN_RATE = 0.0
             CLOSE(LUN_OUT)
             	 
       ENDIF
@@ -488,7 +503,7 @@ C--------- Population (individuals) & potential rate per area -----------
      &                                  RVERHULST, TMIN_G, TOT_G,TMAX_G,
      &                                  TMIN_D, TOT_D, TMAX_D,    
      &                                  LDmin, LESIONAGEOPT, LESLIFEMAX,
-     &                                  DAE_START, beta)
+     &                                  DAE_START, beta, rrds)
 
           USE ModuleDefs
           IMPLICIT NONE
@@ -500,13 +515,13 @@ C--------- Population (individuals) & potential rate per area -----------
           REAL    YMAX, COF_A, COF_B
           REAL    TMIN_G, TOT_G, TMAX_G
           REAL    TMIN_D, TOT_D, TMAX_D
-          REAL    LDmin, LESIONAGEOPT, LESLIFEMAX, beta
+          REAL    LDmin, LESIONAGEOPT, LESLIFEMAX, beta, rrds
           INTEGER DAE_START
 
-          CHARACTER(LEN=6)   ID        
+          CHARACTER(LEN=8)   ID        
           CHARACTER(LEN=20)  VRNAME    
           CHARACTER(LEN=120) DISFIL
-          CHARACTER(LEN=300) LINE
+          CHARACTER(LEN=400) LINE
           CHARACTER(LEN=20)  TARGET_DISEASE
           INTEGER LUN_DIS, IOS, STATE
           LOGICAL FEXIST, FOUND_DISEASE
@@ -568,7 +583,7 @@ C--------- Population (individuals) & potential rate per area -----------
      &                TMIN_G, TOT_G, TMAX_G,
      &                TMIN_D, TOT_D, TMAX_D,
      &                LDmin, LESIONAGEOPT, LESLIFEMAX,
-     &                DAE_START, beta
+     &                DAE_START, beta, rrds
                   IF (IOS .EQ. 0 .AND.
      &                TRIM(VRNAME) .EQ. TRIM(TARGET_DISEASE)) THEN
                       FOUND_DISEASE = .TRUE.
@@ -927,6 +942,36 @@ C--------- Population (individuals) & potential rate per area -----------
           SEV_MONO = MIN(SEV_MONO, 100.0)
 
       END SUBROUTINE F_SEVERITY
+      
+! ------ DEFOLIATION
+      SUBROUTINE F_DEFOLIATION(WTLF, SLDOT, SEVERITY_PCT, rrds,
+     &                         DISEASE_SEN_RATE)
+          USE ModuleDefs
+          IMPLICIT NONE
+          
+          REAL, INTENT(IN)    :: WTLF, SLDOT, SEVERITY_PCT, rrds
+          REAL, INTENT(OUT)   :: DISEASE_SEN_RATE
+          
+          REAL rrsen, rrsenD
+          REAL, PARAMETER :: EPS = 1.0E-6
+          
+          IF (WTLF .GT. EPS) THEN
+              ! relative rate of senescence calculated by dssat
+              rrsen = SLDOT / WTLF
+              
+              ! relative rate of senescence due to disease
+              rrsenD = rrds * (SEVERITY_PCT / 100.0)
+              
+              !physical mass to be removed (avoiding double counting in the same area)]
+              DISEASE_SEN_RATE = (rrsenD - (rrsen * rrsenD)) * WTLF
+              DISEASE_SEN_RATE = MAX(0.0, DISEASE_SEN_RATE)
+          ELSE
+              DISEASE_SEN_RATE = 0.0
+          END IF
+          
+      END SUBROUTINE F_DEFOLIATION
+              
+          
       
 
 !=======================================================================
