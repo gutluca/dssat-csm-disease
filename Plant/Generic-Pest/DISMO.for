@@ -15,6 +15,7 @@ C  12/09/2025 Severity calculation in output file
 C  03/05/2026 Removed hardcoded paths and added logic to find parameter file in DSSAT folders.
 C  03/10/2026 Moved DISMO.for from Plant\CROPGRO to Plant\Generic-Pest
 C  06/25/2026 Improved output file formatting
+C  07/17/2026 Added defoliation/senescence logic and output variable DISEASE_SEN_RATE
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
@@ -971,9 +972,6 @@ C--------- Population (individuals) & potential rate per area -----------
           
       END SUBROUTINE F_DEFOLIATION
               
-          
-      
-
 !=======================================================================
 
 !***********************************************************************
