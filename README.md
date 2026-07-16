@@ -8,7 +8,7 @@
 
 ## Abstract
 
-This repository contains a modified version of the [DSSAT](https://dssat.net/) (Decision Support System for Agrotechnology Transfer) source code, integrating a generic epidemiological model for foliar fungal diseases into the CROPGRO template plant growth module.
+This repository contains a modified version of the [DSSAT]([https://dssat.net/](https://github.com/DSSAT/dssat-csm-os.git)) (Decision Support System for Agrotechnology Transfer) source code, integrating a generic epidemiological model for foliar fungal diseases into the Generic-Pest routine, via damage-coupling points.
 
 The new module, **DISMO** - Disease Impact and Severity Module (`DISEASE_LEAF` subroutine), simulates the progression of leaf diseases such as Asian Soybean Rust (*Phakopsora pachyrhizi*) using a daily cohort-based state-transition model. It calculates diseased leaf area from environmental drivers and pathogen dynamics, and reduces canopy photosynthesis via the existing Generic-Pest (`PEST`) module.
 
@@ -40,6 +40,7 @@ The model follows a **cohort-based polycyclic approach**. Each day a new cohort 
 | Sporulation shape | `F_LAF` | Triangular: rises to 1 at `LESIONAGEOPT`, falls to 0 at age = 1 |
 | Secondary inoculum | `F_PPSR_POP` | Verhulst logistic in population space; spores per unit infectious area |
 | Virtual lesion factor | `F_VIRTUAL_LESIONS` | `fvl = (1 − s)^β`, where `s = NEW_LOSS_TODAY / HEALTH_LAI` |
+| Disease induces senescence | `F_DEFOLIATION` | `DISEASE_SEN_RATE = (rrsenD − (rrsen × rrsenD)) × WTLF`, where `rrsen = SLDOT / WTLF` and `rrsenD = rrds × (SEVERITY_PCT / 100)` |
 
 #### Temperature Response
 
@@ -77,6 +78,9 @@ The virtual lesion concept (Primiano & Amorim, 2020) accounts for the physiologi
 2. `fvl = (1 − s)^β` — `β` is read from the parameter file; higher values = stronger reduction
 3. `VPHOTF_DISMO = fvl` is stored via `PUT('PLANT','VPHOTF',...)` and applied to `PGAVL` inside `ASMDM` in `PEST.for`
 
+#### Disease Induces Senescence (Defoliation)
+
+The accelerated leaf senescence logic (Willocquet et al., 2025) accounts for early defoliation by integrating natural crop senescence with disease severity, preventing overlapping leaf death:
 ---
 
 ### 2. Fungicide Decision Module
@@ -147,25 +151,6 @@ CROPGRO.for
 
 ---
 
-## Code Structure
-
-```
-dssat-csm-disease/
-├── Plant/
-│   ├── CROPGRO/
-│   │   └── CROPGRO.for        # Minimal additions only: PUT calls for XLAID/NVEG0D/YREMGD/YRENDD;
-│   │                          #   ISWDIS='D' added to PEST call conditions
-│   └── Generic-Pest/
-│       ├── PEST.for           # Modified: DISMO state arrays, DISEASE_LEAF calls at all phases,
-│       │                      #   VPHOTF_DISMO passed to ASMDM
-│       ├── DISMO.for          # New: DISEASE_LEAF subroutine + all helper functions
-│       └── PESTCP.for         # Unchanged
-├── disease_parameters.txt     # Pathogen-specific parameter input file (user-provided)
-└── DISEASE_DEVELOPMENT.OUT    # Daily disease diagnostic output (written at runtime to CWD)
-```
-
----
-
 ## How to Use
 
 ### 1. Compilation
@@ -177,15 +162,15 @@ dssat-csm-disease/
 4. The modified `CROPGRO.for` is already in place — it requires no additional action beyond a clean rebuild.
 5. Recompile the full DSSAT-CSM solution.
 
-### 2. Activating DISMO: `ISWDIS = 'D'` in the FILEX
+### 2. Activating DISMO: `ISWDIS = 'Y'` in the FILEX AND input file present in current dirrectory.
 
-The module is activated by the **`DISES`** field in the `*SIMULATION CONTROLS` section of the DSSAT experiment file (`.SBX`, `.MZX`, or equivalent FILEX):
+The module is activated by the **`DISES`** field in the `*SIMULATION CONTROLS` section of the DSSAT experiment file (`.SBX`, `.PNX`, or equivalent FILEX):
 
 ```
 *SIMULATION CONTROLS
 ...
 @N WATER NITRO SYMBI PHOS POTAS DISES TILL  ...
- 1 Y     Y     Y     N    N     D     N     ...
+ 1 Y     Y     Y     N    N     Y     N     ...
 ```
 
 | `DISES` | Behavior |
@@ -234,6 +219,7 @@ If the file is not found in either location, `READ_DISEASE_PARAMETERS` exits sil
 | 18 | `LESLIFEMAX` | REAL | d | Maximum lesion lifespan; scales aging rate |
 | 19 | `DAE_START` | INT | d | Days after emergence when disease becomes active |
 | 20 | `beta` | REAL | — | Virtual lesion exponent β; higher = stronger photosynthesis reduction |
+| 21 | rrds | REAL | d⁻¹ | Relative rate of disease-induced senescence per disease severity unit |
 
 #### Internal Switches in `DISMO.for`
 
@@ -289,6 +275,10 @@ Luca, G. de A., Fattori Junior, I. M., Del Ponte, E. M., & Marin, F. R. (2025). 
 
 - **Virtual Lesions**:
   - Primiano, I. V., & Amorim, L. (2020). *Tropical Plant Pathology*
+    
+- **Defoliatoin logic**
+  - Willocquet L, Bregaglio S, Ferrise R, Kim K, Savary S (2025) DYNAMO-A: a generic simulation model coupling crop growth and disease epidemic. PLoS One 20(4): e0321261. 
+  https://doi.org/10.1371/journal.pone.0321261
 
 - **Fungicide Decision Index (DVIP)**:
   - Beruski, N. D., et al. (2020). *Plant Disease*

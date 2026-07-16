@@ -1,6 +1,41 @@
-*DISEASE PARAMETERS
+!=======================================================================
+! DISEASE IMPACT AND SEVERITY MODULE (DISMO) - INPUT FILE
+!=======================================================================
+! DICTIONARY:
+! Types of parameters: 'B' for Biological and 'I' for Inoculum
+! NDS        : Number of dispersed spores (spores m-2); primary inoculum forcing. 
+!              If not measured in the field, work with initial disease pressure ranges: 
+!              1000 (Low), 10000 (Medium), and 100000 (High).
+! LESION_S   : Average size of one lesion (m2)
+! KVERHULST  : Carrying capacity - max lesions per LAI unit (#/LAI)
+! RVERHULST  : Intrinsic logistic population growth rate (d-1)
+! YMAX       : Maximum infection efficiency (0-1)
+! COF_A      : Infection efficiency rate increase due to LWD
+! COF_B      : Wetness period duration for response deceleration (h)
+! TMIN_G     : Minimum temperature for germination (oC)
+! TOT_G      : Optimum temperature for germination (oC)
+! TMAX_G     : Maximum temperature for germination (oC)
+! TMIN_D     : Minimum temperature for fungal development (oC)
+! TOT_D      : Optimum temperature for fungal development (oC)
+! TMAX_D     : Maximum temperature for fungal development (oC)
+! LDMin      : Length of the shortest latency period (days)
+! LESIONAGEOPT: Lesion age for maximal spore production (0-1)
+! LESLIFEMAX : Maximum lesion lifespan (days)
+! DAE_START  : Days after emergence when disease can start (days)
+! beta       : Virtual lesions reduction factor parameter
+! 
+! AVAILABLE DISEASES:
+! Asian Soybean Rust: Calibration "AsianSBRust1" done for Brazil's South and SouthEast regions, and similar climatic conditions
+!                     Calibration "AsianSBRust2" done for Brazil's Central and North regions, and similar climatic conditions
+!=======================================================================
+*DISEASE CONTROL
 
-@VAR#   VRNAME............      NDS        LESION_S       KVERHULST       RVERHULST            YMAX           COF_A           COF_B          TMIN_G           TOT_G          TMAX_G          TMIN_D           TOT_D          TMAX_D           LDMin    LESIONAGEOPT      LESLIFEMAX       DAE_START   beta
-!Calibration                      I               B               B               B               B               B               B               B               B               B               B               B               B               B               B               B               I      B
+@TARGET_DISEASE
+AsianSBRust1
 
-D00588  AsianSBRust1         100000       0.0000018          571400           0.500           0.300           0.300           2.230           9.600          21.800          30.900           9.700          24.000          33.000           8.000           0.820           53.00              36    0.0
+*DISEASE DATABASE
+
+@VAR#   VRNAME............      NDS        LESION_S       KVERHULST       RVERHULST            YMAX           COF_A           COF_B          TMIN_G           TOT_G          TMAX_G          TMIN_D           TOT_D          TMAX_D           LDMin    LESIONAGEOPT      LESLIFEMAX       DAE_START   beta   rrds
+!Calibration                      I               B               B               B               B               B               B               B               B               B               B               B               B               B               B               B               I      B      B
+
+D00330  AsianSBRust1          50000    0.0000018374          413182           1.218           0.440           0.259           2.000           9.500          22.500          31.720          10.000          21.737          31.705           5.940           0.333          68.282              60    2.5  0.107
