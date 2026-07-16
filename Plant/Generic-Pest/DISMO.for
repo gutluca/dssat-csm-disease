@@ -74,6 +74,7 @@ C-----------------------------------------------------------------------
           REAL Lesion_Rate
           REAL ESP_INOC_SEC
           REAL HEALTH_LAI, HEALTH_LAI_AVAIL, NEW_LOSS_TODAY
+          REAL HEALTH_LAI_EPI
           REAL INF_AREA_K
           REAL s, beta, fvl, VIRTUAL_PHOTO_FACTOR
           REAL WTLF, SLDOT, DISEASE_SEN_RATE
@@ -203,6 +204,13 @@ C--------- Population (individuals) & potential rate per area -----------
                  PREV_IDX   = 1
               END IF
               HEALTH_LAI = MAX(0.0, HEALTH_LAI)
+              
+              IF (LAI_PEAK_SEASON .GT. EPS .AND. DAE .GT. 1) THEN
+                  HEALTH_LAI_EPI = MAX(0.0, LAI_PEAK_SEASON -
+     &                                 LAI_INF_LIST(PREV_IDX))
+              ELSE
+                  HEALTH_LAI_EPI = LAI_TOTAL
+              END IF
 
 !----- Fungicide decision module (optional) -----------------------------
               
@@ -215,7 +223,7 @@ C--------- Population (individuals) & potential rate per area -----------
               
               CALL T_DEV(T, TMIN_G, TOT_G, TMAX_G, TMIN_D, TOT_D,TMAX_D,
      &                  FT, FT_D, FT_G)
-              CALL F_CANSPO(HEALTH_LAI, NDS, LESION_S, FSS)
+              CALL F_CANSPO(HEALTH_LAI_EPI, NDS, LESION_S, FSS)
               CALL F_DS(FSS, NDS, DS)
               
               CALL F_IR(FT, LWD, YMAX, COF_A, COF_B, IR)
@@ -224,7 +232,7 @@ C--------- Population (individuals) & potential rate per area -----------
 
 !----- No healthy leaf → no new deposits today --------------------------
               
-              IF (HEALTH_LAI .LE. 0.0) THEN
+              IF (HEALTH_LAI_EPI .LE. 0.0) THEN
                  IR = 0.0
                  DS = 0.0
               END IF
@@ -275,7 +283,7 @@ C--------- Population (individuals) & potential rate per area -----------
 !----- Potential spore rate per unit sporulating area (yesterday) -------
               
               CALL F_PPSR_POP(KVERHULST, RVERHULST, NPREV_POP,
-     &                        PREV_IS, HEALTH_LAI, POT_SPO_PER_AREA)
+     &                        PREV_IS, HEALTH_LAI_EPI, POT_SPO_PER_AREA)
 
 !----- Cohort loop -------------------------------------------------------
               
@@ -293,7 +301,7 @@ C--------- Population (individuals) & potential rate per area -----------
                   ! allocate effective area respecting remaining healthy leaf
                        INF_AREA_K = ESP_LAT_HIST(k,1) * LESION_S
                        INF_AREA_K = MAX(INF_AREA_K, 0.0)
-                       HEALTH_LAI_AVAIL = MAX(HEALTH_LAI - 
+                       HEALTH_LAI_AVAIL = MAX(HEALTH_LAI_EPI - 
      &                                         NEW_LOSS_TODAY,0.0)
                        ADMITTED_AREA(k)=MIN(INF_AREA_K,HEALTH_LAI_AVAIL)
                        NEW_LOSS_TODAY=NEW_LOSS_TODAY + ADMITTED_AREA(k)
@@ -318,7 +326,7 @@ C--------- Population (individuals) & potential rate per area -----------
 !--------- Secondary production while LA<=1 and substrate remains -------
                       
                       IF (LA .LE. 1.0) THEN
-                          LAI  = MAX(HEALTH_LAI - NEW_LOSS_TODAY, 0.0)
+                          LAI  = MAX(HEALTH_LAI_EPI-NEW_LOSS_TODAY, 0.0)
                           IF(LAI.GT.0.0.AND.POT_SPO_PER_AREA.GT.0.0)THEN
                               PS_K = POT_SPO_PER_AREA * INF_AREA_K * 
      &                        FT_D * LAF
@@ -350,6 +358,11 @@ C--------- Population (individuals) & potential rate per area -----------
      &                                   NEW_LOSS_TODAY
               ELSE
                  LAI_INF_LIST(DAE_IDX) = NEW_LOSS_TODAY
+              END IF
+              
+              IF (LAI_PEAK_SEASON .GT. EPS) THEN
+                  LAI_INF_LIST(DAE_IDX) = MIN(LAI_INF_LIST(DAE_IDX),
+     &                                        LAI_PEAK_SEASON)
               END IF
 
 !----- Internal var uses cm2 m-2, output will divide by 10000 --
