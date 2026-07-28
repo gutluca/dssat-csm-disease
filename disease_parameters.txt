@@ -22,11 +22,13 @@
 ! LESIONAGEOPT: Lesion age for maximal spore production (0-1)
 ! LESLIFEMAX : Maximum lesion lifespan (days)
 ! DAE_START  : Days after emergence when disease can start (days)
-! beta       : Virtual lesions reduction factor parameter
-! 
+! beta       : Virtual lesions reduction factor parameter (0-1)
+! rrds       : Relative rate of disease-induced senescence (d-1)
+! NCYCLE     : If the simulated disease is purely monocyclic, then put "M"; if the disease is policyclic, then put "P".
+!
 ! AVAILABLE DISEASES:
 ! Asian Soybean Rust: Calibration "AsianSBRust1" done for Brazil's South and SouthEast regions, and similar climatic conditions
-!                     Calibration "AsianSBRust2" done for Brazil's Central and North regions, and similar climatic conditions
+!                     Calibration "AsianSBRust2" done for Brazil's Central and North regions, and Southeast USA
 !=======================================================================
 *DISEASE CONTROL
 
@@ -35,7 +37,7 @@ AsianSBRust1
 
 *DISEASE DATABASE
 
-@VAR#   VRNAME............      NDS        LESION_S       KVERHULST       RVERHULST            YMAX           COF_A           COF_B          TMIN_G           TOT_G          TMAX_G          TMIN_D           TOT_D          TMAX_D           LDMin    LESIONAGEOPT      LESLIFEMAX       DAE_START   beta   rrds
-!Calibration                      I               B               B               B               B               B               B               B               B               B               B               B               B               B               B               B               I      B      B
+@VAR#   VRNAME............      NDS        LESION_S       KVERHULST       RVERHULST            YMAX           COF_A           COF_B          TMIN_G           TOT_G          TMAX_G          TMIN_D           TOT_D          TMAX_D           LDMin    LESIONAGEOPT      LESLIFEMAX       DAE_START   beta   rrds  NCYCLE
+!Calibration                      I               B               B               B               B               B               B               B               B               B               B               B               B               B               B               B               I      B      B       I
 
-D00330  AsianSBRust1          50000    0.0000018374          413182           1.218           0.440           0.259           2.000           9.500          22.500          31.720          10.000          21.737          31.705           5.940           0.333          68.282              60    2.5  0.107
+D00001  AsianSBRust1          17800    0.0000024977          421040           1.339           0.400           0.154           1.639           9.670          24.363          32.717          10.256          25.000          33.997           5.000           0.581          41.500             100    2.5  0.100       P
