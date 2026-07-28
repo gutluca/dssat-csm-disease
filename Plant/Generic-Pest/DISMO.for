@@ -9,14 +9,14 @@ C  07/17/2023 Written.
 C  11/15/2024 Revised.
 C  05/20/2025 Fungicide logic. 
 C  08/10/2025 Logic/robustness fixes (cohorts, IR, LAF, LWD, cum. LAI)
-C  11/05/2025 Write func for "DISEASE_DEVELOPMENT.OUT" improved
+C  11/05/2025 Write func for "DISMO.OUT" improved
 C  11/17/2025 Virtual lesions factor added.
 C  12/09/2025 Severity calculation in output file
 C  03/05/2026 Removed hardcoded paths and added logic to find parameter file in DSSAT folders.
 C  03/10/2026 Moved DISMO.for from Plant\CROPGRO to Plant\Generic-Pest
 C  06/25/2026 Improved output file formatting
 C  07/17/2026 Added defoliation/senescence logic (disease-induced senescence)
-C  07/28/2026 GAL Added monocyclic disease support (CYCLE parameter: M/P)
+C  07/28/2026 Added monocyclic disease support (NCYCLE parameter: M/P)
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
@@ -1151,3 +1151,4 @@ C--------- Population (individuals) & potential rate per area -----------
 ! APPLY_FUNGICIDE:
 !   7-day risk sum trigger; optional spray; residual IR reduction window.
 ! F_VIRTUAL_LESIONS: Simulates the green leaf area around the necrotic area that does less photosynthesis
+! F_DEFOLIATION: Computes the daily mass of leaf area to be removed due to disease, avoiding double counting with natural senescence.
