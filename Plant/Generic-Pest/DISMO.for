@@ -15,7 +15,8 @@ C  12/09/2025 Severity calculation in output file
 C  03/05/2026 Removed hardcoded paths and added logic to find parameter file in DSSAT folders.
 C  03/10/2026 Moved DISMO.for from Plant\CROPGRO to Plant\Generic-Pest
 C  06/25/2026 Improved output file formatting
-C  07/17/2026 Added defoliation/senescence logic and output variable DISEASE_SEN_RATE
+C  07/17/2026 Added defoliation/senescence logic (disease-induced senescence)
+C  07/28/2026 GAL Added monocyclic disease support (CYCLE parameter: M/P)
 C-----------------------------------------------------------------------
       SUBROUTINE DISEASE_LEAF (DYNAMIC,
      &    CONTROL, ISWITCH, Tmin, Tmax, RH, LAI_TOTAL,    ! Input
@@ -79,6 +80,8 @@ C-----------------------------------------------------------------------
           REAL s, beta, fvl, VIRTUAL_PHOTO_FACTOR
           REAL WTLF, SLDOT, DISEASE_SEN_RATE
           REAL rrds
+          CHARACTER(LEN=1), SAVE :: NCYCLE        ! 'M' or 'P' from parameter file
+          LOGICAL,          SAVE :: IS_MONOCYCLIC ! .T
           
 C--------- Population (individuals) & potential rate per area -----------
           REAL SPORES_YEST, PREV_LATENTS, INF_COUNT_PREV, NPREV_POP
@@ -140,6 +143,8 @@ C--------- Population (individuals) & potential rate per area -----------
           SEVERITY_PCT    = 0.0
 
           SPORES_YEST = 0.0
+          NCYCLE      = 'P'
+          IS_MONOCYCLIC = .FALSE.
           VIRTUAL_PHOTO_FACTOR = 1.0
           HDR_DONE = .FALSE.
           
@@ -176,7 +181,8 @@ C--------- Population (individuals) & potential rate per area -----------
                CALL READ_DISEASE_PARAMETERS(CONTROL,NDS, LESION_S, 
      &              KVERHULST,YMAX, COF_A, COF_B, RVERHULST, TMIN_G,
      &              TOT_G,TMAX_G,TMIN_D, TOT_D, TMAX_D, LDmin,
-     &              LESIONAGEOPT,LESLIFEMAX,DAE_START, beta, rrds)
+     &              LESIONAGEOPT,LESLIFEMAX,DAE_START, beta,rrds,NCYCLE)
+               IS_MONOCYCLIC = (NCYCLE .EQ. 'M')
           END IF
               
 !----- Disease activation (starts after DAE_START) ----------------------
@@ -261,6 +267,9 @@ C--------- Population (individuals) & potential rate per area -----------
 
 !----- Build yesterday's population (individuals) -----------------------
               
+          POT_SPO_PER_AREA = 0.0
+          IF (.NOT. IS_MONOCYCLIC) THEN
+                  
               PREV_LATENTS = 0.0
               IF (DAE .GT. 1) THEN
                  KMAX = MIN(DAE-1, MAXDAYS)
@@ -284,6 +293,8 @@ C--------- Population (individuals) & potential rate per area -----------
               
               CALL F_PPSR_POP(KVERHULST, RVERHULST, NPREV_POP,
      &                        PREV_IS, HEALTH_LAI_EPI, POT_SPO_PER_AREA)
+              
+          END IF
 
 !----- Cohort loop -------------------------------------------------------
               
@@ -325,7 +336,7 @@ C--------- Population (individuals) & potential rate per area -----------
                       
 !--------- Secondary production while LA<=1 and substrate remains -------
                       
-                      IF (LA .LE. 1.0) THEN
+                      IF (LA .LE. 1.0 .AND. .NOT. IS_MONOCYCLIC) THEN
                           LAI  = MAX(HEALTH_LAI_EPI-NEW_LOSS_TODAY, 0.0)
                           IF(LAI.GT.0.0.AND.POT_SPO_PER_AREA.GT.0.0)THEN
                               PS_K = POT_SPO_PER_AREA * INF_AREA_K * 
@@ -339,7 +350,8 @@ C--------- Population (individuals) & potential rate per area -----------
 !----- Store infectious surface today & add secondary inoculum ----------
               
               SUP_INF_LIST(DAE_IDX) = IS
-
+              
+          IF (.NOT. IS_MONOCYCLIC) THEN
               IF (ESP_INOC_SEC .GT. 0.0) THEN
                   ESP_LAT_HIST(DAE_IDX, 1) = ESP_LAT_HIST(DAE_IDX, 1) + 
      &                                     ESP_INOC_SEC
@@ -350,6 +362,9 @@ C--------- Population (individuals) & potential rate per area -----------
 !----- Pool of spores of the day (life=1 day) ---------------------------
               
               SPORES_YEST = ESP_INOC_SEC
+          ELSE
+              SPORES_YEST = 0.0
+          END IF
               
 !----- Cumulative removed LAI (m2 m-2) ----------------------------------
               
@@ -517,7 +532,7 @@ C--------- Population (individuals) & potential rate per area -----------
      &                                  RVERHULST, TMIN_G, TOT_G,TMAX_G,
      &                                  TMIN_D, TOT_D, TMAX_D,    
      &                                  LDmin, LESIONAGEOPT, LESLIFEMAX,
-     &                                  DAE_START, beta, rrds)
+     &                                  DAE_START, beta, rrds, NCYCLE)
 
           USE ModuleDefs
           IMPLICIT NONE
@@ -537,6 +552,7 @@ C--------- Population (individuals) & potential rate per area -----------
           CHARACTER(LEN=120) DISFIL
           CHARACTER(LEN=400) LINE
           CHARACTER(LEN=20)  TARGET_DISEASE
+           CHARACTER(LEN=1) NCYCLE
           INTEGER LUN_DIS, IOS, STATE
           LOGICAL FEXIST, FOUND_DISEASE
 
@@ -562,6 +578,7 @@ C--------- Population (individuals) & potential rate per area -----------
           TARGET_DISEASE = ' '
           STATE          = 0
           FOUND_DISEASE  = .FALSE.
+          NCYCLE         = 'P' !default to policyclic 
 
           DO WHILE (.TRUE.)
               READ(LUN_DIS, '(A)', IOSTAT=IOS) LINE
@@ -597,7 +614,7 @@ C--------- Population (individuals) & potential rate per area -----------
      &                TMIN_G, TOT_G, TMAX_G,
      &                TMIN_D, TOT_D, TMAX_D,
      &                LDmin, LESIONAGEOPT, LESLIFEMAX,
-     &                DAE_START, beta, rrds
+     &                DAE_START, beta, rrds, NCYCLE
                   IF (IOS .EQ. 0 .AND.
      &                TRIM(VRNAME) .EQ. TRIM(TARGET_DISEASE)) THEN
                       FOUND_DISEASE = .TRUE.
@@ -983,7 +1000,7 @@ C--------- Population (individuals) & potential rate per area -----------
               DISEASE_SEN_RATE = 0.0
           END IF
           
-      END SUBROUTINE F_DEFOLIATION
+          END SUBROUTINE F_DEFOLIATION
               
 !=======================================================================
 
@@ -1079,11 +1096,21 @@ C--------- Population (individuals) & potential rate per area -----------
 !                           LAI_TOTAL observed throughout the current season. 
 !                           Used as the denominator to normalize severity, preventing
 !                           false 100% values during senescence.
+! rrds (d-1) : Relative rate of senescence due to disease, read from input. Used in F_DEFOLIATION to compute the daily mass of leaf area to be removed due to disease.
 !
 ! SEVERITY_PCT (%): OUTPUT variable (SAVE). Monotonous disease severity.
 !                   Calculated as (LA_DISEASE / LAI_PEAK_SEASON) * 100.
 !                   Contains the "blinded" value that never decreases,
-!                   ensuring consistent AUDPC calculation.   
+!                   ensuring consistent AUDPC calculation.
+! NCYCLE (CHARACTER*1) : Disease cycle type read from disease_parameters.txt.
+!                       'P' = polycyclic (secondary inoculum produced; default).
+!                       'M' = monocyclic (no secondary inoculum; single cycle).
+! IS_MONOCYCLIC (L)   : Logical derived from NCYCLE. When .TRUE., the three
+!                       secondary-inoculum blocks (population build-up,
+!                       cohort sporulation, ESP_LAT_HIST re-injection) are
+!                       skipped entirely. All other model logic (latency,
+!                       lesion aging, DISEASE_LAI, VIRTUAL_PHOTO_FACTOR,
+!                       DISEASE_SEN_RATE) runs unchanged for both modes.
       
 ! --------------------------- Locals (arrays) --------------------------
 ! ESP_LAT_HIST(MAXDAYS,5):
