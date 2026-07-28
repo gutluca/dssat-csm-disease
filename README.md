@@ -25,6 +25,7 @@ DISMO will only activate if  ISWDIS = 'Y' AND the input file (disease_parameters
 ### 1. The Epidemiological Model (`DISEASE_LEAF` — `DISMO.for`)
 
 The model follows a **cohort-based polycyclic approach**. Each day a new cohort of latent spores is deposited on the canopy; cohorts progress through latency, become infectious, sporulate, and die according to temperature-driven rates. Secondary inoculum produced by infectious cohorts creates new latent cohorts, resulting in the exponential epidemic growth typical of rust pathogens.
+If desired, DISMO also supports monocyclic disease simulations. The cycle mode is defined by the NCYCLE column in the disease parameter file: use 'P' for Polycyclic (default) or 'M' for Monocyclic.
 
 #### Disease Cycle — Processes and Functions
 
