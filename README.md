@@ -1,4 +1,4 @@
-# Coupling of an Epidemiological Module for Generic Leaf Fungal Diseases with the CROPGRO Crop Simulation Model (DSSAT)
+# Disease Impact and Severity Module - DISMO
 
 **Authors**: Gustavo de A. Luca, Izael M. Fattori Jr., Fábio R. Marin
 
